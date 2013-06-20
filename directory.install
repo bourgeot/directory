@@ -120,6 +120,7 @@ function directory_enable() {
       $vocabulary = (object) $vocab;
       taxonomy_vocabulary_save($vocabulary);
       variable_set($name_var, $vocabulary->vid);
+      directory_loader($vocab['machine_name']);
     }
     $field = array(
       'field_name' => 'field_' . $vocab['machine_name'],
@@ -140,4 +141,149 @@ function directory_enable() {
     drupal_set_message('Field Definition ' . $f['id'] . ' created.');
   }
 }
-
+/*
+ * Implements hook_disable
+ */
+function directory_disable() {
+  $vocabs = array(
+    'ua_locations',
+    'ua_orgs',
+    'ua_affiliations',
+    'sa_interests',
+    'alphabet',
+    'months',
+  );
+  // drop the term vocabularies, unset the variables and the reference field definitions.
+  foreach ($vocabs as $vocab) {
+      $vid = variable_get($vocab . '_vocabulary', 0);
+      if ($vid > 0) {
+        taxonomy_vocabulary_delete($vid);
+        variable_del($vocab . '_vocabulary');
+        //remove the term reference fields for this vocabulary
+        field_delete_field('field_' . $vocab);
+        field_purge_batch(1000);
+      }
+  }
+}
+function directory_loader($vocabulary_name) {
+  $vid = variable_get($vocabulary_name . '_vocabulary', 0);
+  if ($vid == 0) {
+      return FALSE;
+  }
+  else {
+    $count = 0;
+    switch ($vocabulary_name) {
+      case 'ua_orgs':
+      break;
+      case 'ua_locations':
+      break;
+      case 'ua_affiliations':
+        $set = array(
+          'student',
+          'admit',
+          'employee',
+          'studentworker',
+          'gradasst',
+          'faculty',
+          'staff',
+          'affiliate',
+          'dcc',
+          'retiree',
+          'member',
+          'former-student',
+          'former-employee',
+          'former-studentworker',
+          'former-gradasst',
+          'former-faculty',
+          'former-staff',
+          'former-affiliate',
+          'former-dcc',
+          'former-member',
+        );
+        foreach($set as $letter) {
+          _create_term($vocabulary_name, $letter);
+          $count++;
+        }
+      break;
+      case 'alphabet':
+        $set =  array(
+          'A',
+          'B',
+          'C',
+          'D',
+          'E',
+          'F',
+          'G',
+          'H',
+          'I',
+          'J',
+          'K',
+          'L',
+          'M',
+          'N',
+          'O',
+          'P',
+          'Q',
+          'R',
+          'S',
+          'T',
+          'U',
+          'V',
+          'W',
+          'X',
+          'Y',
+          'Z',
+        );
+        foreach($set as $letter) {
+          _create_term($vocabulary_name, $letter);
+          $count++;
+        }
+      break;
+      case 'months':
+        $set =  array(
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        );
+        foreach($set as $letter) {
+          _create_term($vocabulary_name, $letter, '', $count + 1);
+          $count++;
+        }
+      break;
+    }
+    drupal_set_message('Added ' . $count . ' terms to ' . $vocabulary_name . '.', 'status');
+  }
+}
+/**
+ * Create a single term and add to a specific vocabulary if not already present
+ *  @vocab - the machine name of the vocabulary
+ *  @term - the human readable name of the term to be added
+ *
+ *  @desc - the humna readable description of the term to be added (Optional)
+ *  @weight - the weight of the term in the vocabulary list (Optional)
+ */
+function _create_term($vocab_name, $term, $desc = '', $weight = 0)  {
+  $added = NULL;
+  $added = taxonomy_get_term_by_name($term);
+  $vid = variable_get($vocab_name . '_vocabulary', 0);
+  if ($added == '' || $added == NULL || $vid > 0)  {
+    $new_term = array(
+      'name' => $term,
+      'description' => $desc,
+      'parent' => array(0),
+      'weight' => $weight,
+      'vid' => $vid,
+    );
+    $term_obj = (object) $new_term;
+    taxonomy_term_save($term_obj);
+  }
+}
