@@ -1,0 +1,143 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function directory_schema() {
+  $schema['directory_user_term_index'] = array(
+    'description' => 'Maintains denormalized information about user/term relationships.',
+    'fields' => array(
+      'uid' => array(
+        'description' => 'The {users}.uid this record tracks.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'tid' => array(
+         'description' => 'The term ID.',
+         'type' => 'int',
+         'unsigned' => TRUE,
+         'not null' => TRUE,
+         'default' => 0,
+      ),
+      'status' => array(
+        'description' => 'Boolean indicating whether the user is active.',
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => 0,
+        'size' => 'tiny',
+      ),
+      'login' => array(
+        'description' => 'The Unix timestamp when the user last logged in.',
+        'type' => 'int',
+        'unsigned' => FALSE,
+        'not null' => TRUE,
+        'default'=> 0,
+      ),
+    ),
+    'indexes' => array(
+      'term_user' => array('tid', 'status', 'login'),
+      'uid' => array('uid'),
+    ),
+    'foreign keys' => array(
+      'tracked_node' => array(
+        'table' => 'users',
+        'columns' => array('uid' => 'uid'),
+      ),
+      'term' => array(
+        'table' => 'taxonomy_term_data',
+        'columns' => array('tid' => 'tid'),
+      ),
+    ),
+  );
+
+  return $schema;
+}
+/*
+ * Implements hook_enable
+ */
+function directory_enable() {
+  $t = get_t();
+
+  //create some vocabularies
+  $vocabs = array(
+    array(
+      'name' => 'UA Locations',
+      'machine_name' => 'ua_locations',
+      'description' => 'Locations at the University of Arizona',
+      'hierarchy' => 1,
+      'module' => 'directory',
+      //'weight' => 1,
+    ),
+    array(
+      'name' => 'UA Organizations',
+      'machine_name' => 'ua_orgs',
+      'description' => 'Organizations in the UA HR system',
+      'hierarchy' => 1,
+      'module' => 'directory',
+      //'weight' => 3,
+    ),
+    array(
+      'name' => 'UA Affiliations',
+      'machine_name' => 'ua_affiliations',
+      'description' => 'Ways that people are affiliated with the University of Arizona',
+      'hierarchy' => 1,
+      'module' => 'directory',
+      //'weight' => 2,
+    ),
+    array(
+      'name' => 'SA Interests',
+      'machine_name' => 'sa_interests',
+      'description' => 'University of Arizona Student Affairs Professional Interests',
+      'hierarchy' => 1,
+      'module' => 'directory',
+      //'weight' => 2,
+    ),
+    array(
+      'name' => 'Alphabet',
+      'machine_name' => 'alphabet',
+      'description' => 'Notational Convenience',
+      'hierarchy' => 0, //flat
+      'module' => 'directory',
+      //'weight' => 3,
+    ),
+    array(
+      'name' => 'Months',
+      'machine_name' => 'months',
+      'description' => 'Notational Convenience',
+      'hierarchy' => 0, //flat
+      'module' => 'directory',
+      //'weight' => 3,
+    ),
+  );
+  // Create the term vocabularies and the reference field definitions.
+  foreach ($vocabs as $vocab) {
+    drupal_set_message($vocab['machine_name']);
+    $name_var = $vocab['machine_name'] . '_vocabulary';
+    $vocabulary = taxonomy_vocabulary_load(variable_get($name_var, 0));
+    if (!$vocabulary) {
+      $vocabulary = (object) $vocab;
+      taxonomy_vocabulary_save($vocabulary);
+      variable_set($name_var, $vocabulary->vid);
+    }
+    $field = array(
+      'field_name' => 'field_' . $vocab['machine_name'],
+      'type' => 'taxonomy_term_reference',
+      'cardinality' => -1,
+      'label' => $vocab['name'],
+      'settings' => array(
+        'allowed_values' => array(
+          array(
+            'vocabulary' => $vocab['machine_name'],
+            'parent' => 0,
+          ),
+        ),
+      ),
+    );
+    field_create_field($field);
+    $f = field_info_field($field['field_name']);
+    drupal_set_message('Field Definition ' . $f['id'] . ' created.');
+  }
+}
+

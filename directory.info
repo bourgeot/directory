@@ -1,0 +1,4 @@
+name = Directory
+description = Extensible Directory using Taxonomy with Users
+package = Directory
+core = 7.x
