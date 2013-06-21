@@ -54,7 +54,7 @@ function directory_schema() {
 
   return $schema;
 }
-/*
+/*http://git-scm.com/book/ch2-5.html
  * Implements hook_enable
  */
 function directory_enable() {
@@ -178,10 +178,42 @@ function directory_loader($vocabulary_name) {
         //result has a bunch of objects in it. Transform the data to an array where each
         //entry is indexed by its dept id and is itself an array.
         if(!empty($orgs)) {
-          drupal_set_message('made it past term create loop. orgs has ' . count($orgs) . ' terms.');
           foreach($orgs as $org) {
-          _create_term($vocabulary_name, $org['dept_name'], $org['org_id'], $count +1);
-          $count++;
+            $orgs[$org['org_id']]['tid'] = _create_term($vocabulary_name, $org['dept_name'], $org['org_id'], $count +1);
+            $count++;
+            //drupal_set_message( $org['tid'] . 'created');
+		//$orgs[$org['org_id']]['tid'] = $zans;
+          }
+          //now build structure
+          reset($orgs);
+		//dsm($orgs);
+		$term_array = taxonomy_get_tree($vid, 0);
+          foreach($term_array as $term) {
+		$parent_set = array();
+		$term_org = $orgs[$term->description];
+		$parent_org = $orgs[$term_org['org_parent']];
+		$ptid = $parent_org['tid'];
+		if ($term->tid == $ptid) {
+			$ptid = 0;
+		}
+		$term->parent = $ptid;
+		taxonomy_term_save($term);
+
+            //drupal_set_message( 'using ' . $org['tid']);
+/*            if($orgs[$term->description]['org_parent_name'] <> '') {
+              drupal_set_message('with ' . $term->tid . ' looking for ' . $orgs[$term->description]['org_parent_name'] );
+              //$parent_array = taxonomy_get_term_by_name($orgs[$term->description]['org_parent_name']);
+		$parent_term = taxonomy_term_load($orgs[$term->description][
+              if(count($parent_array) > 0) {
+                foreach ($parent_array as $pterm) {
+                  $parent_set[] = $pterm->tid;
+                }
+                $term->parent = $parent_set;
+                taxonomy_term_save($term);
+              }
+              //drupal_set_message('made it past term create loop. orgs has ' . count($orgs) . ' terms.');            }
+            }
+*/
           }
         }
       break;
@@ -281,7 +313,7 @@ function directory_loader($vocabulary_name) {
  *  @desc - the humna readable description of the term to be added (Optional)
  *  @weight - the weight of the term in the vocabulary list (Optional)
  */
-function _create_term($vocab_name, $term, $desc = '', $weight = 0)  {
+function _create_term($vocab_name, $term, $desc = '', $weight = 0, $add_parent = 0)  {
   $added = NULL;
   $added = taxonomy_get_term_by_name($term);
   $vid = variable_get($vocab_name . '_vocabulary', 0);
@@ -289,14 +321,17 @@ function _create_term($vocab_name, $term, $desc = '', $weight = 0)  {
     $new_term = array(
       'name' => $term,
       'description' => $desc,
-      'parent' => array(0),
+      'parent' => array($add_parent),
       'weight' => $weight,
       'vid' => $vid,
     );
     $term_obj = (object) $new_term;
     taxonomy_term_save($term_obj);
     //in case you want it.
-    return $term_obj->tid;
+    if ($term_obj->tid > 0) {
+      return $term_obj->tid;
+    }
+    else { return 'trouble'; }
   }
 }
 /*
@@ -313,10 +348,12 @@ function _fetch_ua_orgs($url = '') {
     $objs = json_decode($f);
     //
     $o = array();
+	$needOne = true;
     do {
       $obj = array_pop($objs);
       /* I am going to rebuild the hierarchy to flatten out the object structure a bit.
        * obj.UaOrg, obj.ParentUAOrg, and obj.ChildUAOrg all have internal structure.
+	* Child Ua Org is a list of objects that have ids.
        * Rather than step through all of it I am going to rely on the fact that
        * there is a single parent and multiple children.
        * If an object has no children (leaf node) then build it.
@@ -335,11 +372,15 @@ function _fetch_ua_orgs($url = '') {
           'dept_name' => $obj->UaOrg->hr_name,
           'org_parent' => $obj->UaOrg->hr_parent_code,
           'org_parent_name' => $obj->UaOrg->hr_parent_name,
+          'tid' => 0,
         );
-        $count++;
       }
     } while (count($objs) > 0);
-  }
-  drupal_set_message(count($objs) . ' orgs returned, ' . count($o) . ' orgs kept.');
+
+
   return $o;
+  }
+  else {
+    return FALSE;
+  }
 }
