@@ -174,6 +174,16 @@ function directory_loader($vocabulary_name) {
     $count = 0;
     switch ($vocabulary_name) {
       case 'ua_orgs':
+        $orgs = _fetch_ua_orgs();
+        //result has a bunch of objects in it. Transform the data to an array where each
+        //entry is indexed by its dept id and is itself an array.
+        if(!empty($orgs)) {
+          drupal_set_message('made it past term create loop. orgs has ' . count($orgs) . ' terms.');
+          foreach($orgs as $org) {
+          _create_term($vocabulary_name, $org['dept_name'], $org['org_id'], $count +1);
+          $count++;
+          }
+        }
       break;
       case 'ua_locations':
       break;
@@ -285,5 +295,51 @@ function _create_term($vocab_name, $term, $desc = '', $weight = 0)  {
     );
     $term_obj = (object) $new_term;
     taxonomy_term_save($term_obj);
+    //in case you want it.
+    return $term_obj->tid;
   }
+}
+/*
+ * use sia.uits interface to get the current ua org structure.
+ */
+function _fetch_ua_orgs($url = '') {
+  if ($url == '') {
+    //get them all
+    $url = 'https://siaapps.uits.arizona.edu/home/orgs/ua_orgs/index.json';
+  }
+  $objs = array();
+  $f = file_get_contents($url);
+  if( $f !== FALSE ) {
+    $objs = json_decode($f);
+    //
+    $o = array();
+    do {
+      $obj = array_pop($objs);
+      /* I am going to rebuild the hierarchy to flatten out the object structure a bit.
+       * obj.UaOrg, obj.ParentUAOrg, and obj.ChildUAOrg all have internal structure.
+       * Rather than step through all of it I am going to rely on the fact that
+       * there is a single parent and multiple children.
+       * If an object has no children (leaf node) then build it.
+       * The remaining nodes are intermediates.
+       * Sort the leaves by parent id and build the parent.
+       * Then look that id up in 'data' and get its parent.
+       * First build the flat terms and ignore internal structure, but
+       * Note it. I wrote this earlier in javascript so that's what's below.
+       * var element = new orgNode(obj.UaOrg.id, obj.UaOrg.name,
+       * obj.UaOrg.parent_id, obj.UaOrg.parent_name);
+       */
+       //create the term and reference it.
+      if ($obj->UaOrg->finOnly != 1 || $obj->UaOrg->hr_code != '') {
+        $o[$obj->UaOrg->hr_code] = array(
+          'org_id' => $obj->UaOrg->hr_code,
+          'dept_name' => $obj->UaOrg->hr_name,
+          'org_parent' => $obj->UaOrg->hr_parent_code,
+          'org_parent_name' => $obj->UaOrg->hr_parent_name,
+        );
+        $count++;
+      }
+    } while (count($objs) > 0);
+  }
+  drupal_set_message(count($objs) . ' orgs returned, ' . count($o) . ' orgs kept.');
+  return $o;
 }

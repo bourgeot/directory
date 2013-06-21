@@ -1,0 +1,18 @@
+<?php
+/*
+ * use sia.uits interface to get the current ua org structure.
+ */
+function directory_fetch_ua_orgs($url = '') {
+  if ($url == '') {
+    //get them all
+    $url = 'https://siaapps.uits.arizona.edu/home/orgs/ua_orgs/index.json';
+  }
+  $objs = array();
+  $f = file_get_contents($url);
+  if( $f !== FALSE ) {
+    $objs = json_decode($f);
+  }
+  drupal_set_message(count($objs) . ' orgs returned.');
+  return $objs;
+
+}

@@ -1,4 +1,4 @@
 name = Directory
 description = Extensible Directory using Taxonomy with Users
-package = Directory
+package = Z_Directory
 core = 7.x
