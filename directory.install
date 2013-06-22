@@ -23,7 +23,7 @@ function directory_schema() {
       ),
     ),
     'indexes' => array(
-      'term_user' => array('tid', 'status'),
+      'term_user' => array('tid'),
       'uid' => array('uid'),
     ),
     'foreign keys' => array(
@@ -107,24 +107,25 @@ function directory_enable() {
       taxonomy_vocabulary_save($vocabulary);
       variable_set($name_var, $vocabulary->vid);
       directory_loader($vocab['machine_name']);
-    }
-    $field = array(
-      'field_name' => 'field_' . $vocab['machine_name'],
-      'type' => 'taxonomy_term_reference',
-      'cardinality' => -1,
-      'label' => $vocab['name'],
-      'settings' => array(
-        'allowed_values' => array(
-          array(
-            'vocabulary' => $vocab['machine_name'],
-            'parent' => 0,
+
+      $field = array(
+        'field_name' => 'field_' . $vocab['machine_name'],
+        'type' => 'taxonomy_term_reference',
+        'cardinality' => -1,
+        'label' => $vocab['name'],
+        'settings' => array(
+          'allowed_values' => array(
+            array(
+              'vocabulary' => $vocab['machine_name'],
+              'parent' => 0,
+            ),
           ),
         ),
-      ),
-    );
-    field_create_field($field);
-    $f = field_info_field($field['field_name']);
-    drupal_set_message('Field Definition ' . $f['id'] . ' created.');
+      );
+      field_create_field($field);
+      $f = field_info_field($field['field_name']);
+      drupal_set_message('Field Definition ' . $f['id'] . ' created.');
+    }
   }
 }
 /*

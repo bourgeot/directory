@@ -1,5 +1,5 @@
 <?php
-function directory_build_user_index($user) {
+function directory_build_user_term_index($user) {
   /*
    * This is a hack/extension of the taxonomy_build_node_index function
    * but for users. It references a table called directory_user_term_index
