@@ -21,27 +21,13 @@ function directory_schema() {
          'not null' => TRUE,
          'default' => 0,
       ),
-      'status' => array(
-        'description' => 'Boolean indicating whether the user is active.',
-        'type' => 'int',
-        'not null' => FALSE,
-        'default' => 0,
-        'size' => 'tiny',
-      ),
-      'login' => array(
-        'description' => 'The Unix timestamp when the user last logged in.',
-        'type' => 'int',
-        'unsigned' => FALSE,
-        'not null' => TRUE,
-        'default'=> 0,
-      ),
     ),
     'indexes' => array(
-      'term_user' => array('tid', 'status', 'login'),
+      'term_user' => array('tid', 'status'),
       'uid' => array('uid'),
     ),
     'foreign keys' => array(
-      'tracked_node' => array(
+      'tracked_user' => array(
         'table' => 'users',
         'columns' => array('uid' => 'uid'),
       ),
@@ -147,7 +133,7 @@ function directory_enable() {
 function directory_disable() {
   $vocabs = array(
     'ua_locations',
-    'ua_orgs',
+    //'ua_orgs',
     'ua_affiliations',
     'sa_interests',
     'alphabet',
