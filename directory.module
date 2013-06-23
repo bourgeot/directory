@@ -1,33 +1,36 @@
 <?php
-function directory_build_user_term_index($user) {
+function directory_build_user_term_index($edit, $account) {
   /*
    * This is a hack/extension of the taxonomy_build_node_index function
    * but for users. It references a table called directory_user_term_index
-   * described in directory.install. It is a denormalized table of term/user 
+   * described in directory.install. It is a denormalized table of term/user
    * relationships for active users.
    * because it is a directory, the list of eligible users needs to be large
    * even if they never actually authenticate into the directory, b/c others
    * have to be able to find them.
    */
-
+  dsm($edit);
+  dsm($account);
   $status = NULL;
   // Only maintain the index for active (not blocked) users.
-  if ($status) {
-    // Collect a unique list of all the term IDs from all user fields.
+  if ($edit['status']) {
+    // Collect a unique list of all the term IDs from all user fields
+    //dsm('madeit');
     $tid_all = array();
     foreach (field_info_instances('user', 'user') as $instance) {
       $field_name = $instance['field_name'];
       $field = field_info_field($field_name);
+      //dsm($field);
       if ($field['module'] == 'taxonomy' && $field['storage']['type'] == 'field_sql_storage') {
-        // If a field value is not set in the node object when user_save() is
+        // If a field value is not set in the object when user_save() is
         // called, the old value from is used.
-        if (isset($user->{$field_name})) {
-          $items = $user->{$field_name};
+        if (isset($edit[$field_name])) {
+          $items = $edit[$field_name];
         }
         //tcb: this is from the node version. not sure if i need it.
-        //elseif (isset($node->original->{$field_name})) {
-        //  $items = $node->original->{$field_name};
-        //}
+        elseif (isset($account->{$field_name})) {
+         $items = $account->{$field_name};
+        }
         else {
           continue;
         }
@@ -45,11 +48,12 @@ function directory_build_user_term_index($user) {
       $query = db_insert('directory_user_term_index')->fields(array('uid', 'tid'));
       foreach ($tid_all as $tid) {
         $query->values(array(
-          'nid' => $user->uid,
+          'uid' => $account->uid,
           'tid' => $tid,
         ));
       }
       $query->execute();
+            //drupal_set_message('updated duti');
     }
   }
 }
@@ -66,17 +70,17 @@ function directory_user_delete($user) {
 /*
  * implements hook_user_insert()
  */
-function directory_user_insert($user) {
+function directory_user_insert(&$edit, $account, $category) {
   // Add taxonomy index entries for the user.
-  taxonomy_build_node_index($user);
+  directory_build_user_term_index($edit, $account);
 }
 /*
  * Implements hook_user_update()
  */
-function directory_user_update($user) {
+function directory_user_update(&$edit, $account, $category) {
   // Always rebuild the node's taxonomy index entries on node save.
-  directory_delete_user_term_index($user);
-  directory_build_user_term_index($user);
+  directory_delete_user_term_index($account);
+  directory_build_user_term_index($edit, $account);
 }
 /*
  * Implements hook_taxonomy_term_delete()
@@ -128,12 +132,12 @@ function directory_entity_info_alter(&$entity_info) {
 }
 /*
  * Implements hook_taxonomy_term_view()
- * 
- * included is the code from taxonomy_term_page. I am adding only a 
+ *
+ * included is the code from taxonomy_term_page. I am adding only a
  * 'directory view' to attach user info. b/c this occurs earlier in the flow
  * than the node loading, something might have to be done with the 'no content'
  * render array element...
- * 
+ *
   // Normally we would call taxonomy_term_show() here, but for backwards
   // compatibility in Drupal 7 we do not want to do that (it produces different
   // data structures and HTML markup than what Drupal 7 released with). Calling
@@ -166,11 +170,28 @@ function directory_taxonomy_term_view($term, $view_mode, $langcode) {
   /*
    *
    */
-  if ($view_mode == 'directory') {
+  if ($view_mode == 'directory' || $view_mode == 'full') {
     //load users tagged with this term
     if ($uids = directory_select_users($term->tid, TRUE, FALSE)) {
       $users = user_load_multiple($uids);
-      $term->content['users'] = user_view_multiple($users);    
+      $term->content['users'] = array(
+        '#theme' => 'user_list',
+        '#users' => $users,
+        '#prefix' => '<div>',
+        '#suffix' => '</div>',
+      );
+      /*foreach($users as $account) {
+        //$term->content['users'][$account->uid] = array('#type' => 'container');
+
+        $term->content['users'][$account->uid] = array(
+          'name' => array(
+            '#markup' => format_username($account),
+            '#prefix' => '<h3>',
+            '#suffix' => '</h3>',
+          ),
+          //'details' => user_view($account, $view_mode = 'full', $langcode = NULL),
+        );
+      }*/
     }
     else {
       $term->content['no_users'] = array(
@@ -186,7 +207,9 @@ function directory_taxonomy_term_view($term, $view_mode, $langcode) {
  *
  */
 function directory_taxonomy_term_view_alter(&$build) {
-  //need to see what $build looks like. If the view mode is 
-  //directory and the 'users content' is set, don't display the 
+  //need to see what $build looks like. If the view mode is
+  //directory and the 'users content' is set, don't display the
   //['no_content'] message associated with the node version above.
+  ///not here. it is done in taxonomy term page so the key doesn't exist
+  //when this gets made.
   }
