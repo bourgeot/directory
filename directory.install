@@ -1,45 +1,6 @@
 <?php
 
-/**
- * Implements hook_schema().
- */
-function directory_schema() {
-  $schema['directory_user_term_index'] = array(
-    'description' => 'Maintains denormalized information about user/term relationships.',
-    'fields' => array(
-      'uid' => array(
-        'description' => 'The {users}.uid this record tracks.',
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
-      ),
-      'tid' => array(
-         'description' => 'The term ID.',
-         'type' => 'int',
-         'unsigned' => TRUE,
-         'not null' => TRUE,
-         'default' => 0,
-      ),
-    ),
-    'indexes' => array(
-      'term_user' => array('tid'),
-      'uid' => array('uid'),
-    ),
-    'foreign keys' => array(
-      'tracked_user' => array(
-        'table' => 'users',
-        'columns' => array('uid' => 'uid'),
-      ),
-      'term' => array(
-        'table' => 'taxonomy_term_data',
-        'columns' => array('tid' => 'tid'),
-      ),
-    ),
-  );
 
-  return $schema;
-}
 /*http://git-scm.com/book/ch2-5.html
  * Implements hook_enable
  */
@@ -125,8 +86,39 @@ function directory_enable() {
       field_create_field($field);
       $f = field_info_field($field['field_name']);
       drupal_set_message('Field Definition ' . $f['id'] . ' created.');
+      //now create the field instances
+      $instance = array(
+        'field_name' => $field['field_name'],
+        'entity_type' => 'node',
+        'bundle' => 'directory_profile',
+      );
+      field_create_instance($instance);
+      drupal_set_message('Field Definition ' . $instance['id'] . ' created.');
+
     }
   }
+  /* nodeProfile branch: Create a node type called profile and assign all the
+   * taxonomy fields to it. Intent is to stop swimming upstream with users and
+   * instead use all the built in node functionality for indexing and searching.
+   * This also alleviates the problem of assigning users to all the folks who have
+   * net ids. NOW their profiles can be created as directory entries and then they
+   * can be affiliated with their user id if they ever choose to log into the system.
+   *
+   * Ensure the Directory Profile node type is available. Node definition is
+   * performed in the .module file. hook_form must be implemented and the title
+   * must be returned to get this to show in the list of content types.
+   */
+
+  node_types_rebuild();
+  $types = node_type_get_types();
+  node_add_body_field($types['directory_profile']);
+  //load the instance definition for the body
+  $body_instance = field_info_instance('node', 'body', 'directory_profile');
+  //configure
+  $body_instance['type'] = 'text_summary_or_trimmed';
+  $body_instance['label'] = 'About Me';
+  field_update_instance($body_instance);
+
 }
 /*
  * Implements hook_disable
@@ -169,28 +161,28 @@ function directory_loader($vocabulary_name) {
             $orgs[$org['org_id']]['tid'] = _create_term($vocabulary_name, $org['dept_name'], $org['org_id'], $count +1);
             $count++;
             //drupal_set_message( $org['tid'] . 'created');
-		//$orgs[$org['org_id']]['tid'] = $zans;
+    //$orgs[$org['org_id']]['tid'] = $zans;
           }
           //now build structure
           reset($orgs);
-		//dsm($orgs);
-		$term_array = taxonomy_get_tree($vid, 0);
+    //dsm($orgs);
+    $term_array = taxonomy_get_tree($vid, 0);
           foreach($term_array as $term) {
-		$parent_set = array();
-		$term_org = $orgs[$term->description];
-		$parent_org = $orgs[$term_org['org_parent']];
-		$ptid = $parent_org['tid'];
-		if ($term->tid == $ptid) {
-			$ptid = 0;
-		}
-		$term->parent = $ptid;
-		taxonomy_term_save($term);
+    $parent_set = array();
+    $term_org = $orgs[$term->description];
+    $parent_org = $orgs[$term_org['org_parent']];
+    $ptid = $parent_org['tid'];
+    if ($term->tid == $ptid) {
+      $ptid = 0;
+    }
+    $term->parent = $ptid;
+    taxonomy_term_save($term);
 
             //drupal_set_message( 'using ' . $org['tid']);
 /*            if($orgs[$term->description]['org_parent_name'] <> '') {
               drupal_set_message('with ' . $term->tid . ' looking for ' . $orgs[$term->description]['org_parent_name'] );
               //$parent_array = taxonomy_get_term_by_name($orgs[$term->description]['org_parent_name']);
-		$parent_term = taxonomy_term_load($orgs[$term->description][
+    $parent_term = taxonomy_term_load($orgs[$term->description][
               if(count($parent_array) > 0) {
                 foreach ($parent_array as $pterm) {
                   $parent_set[] = $pterm->tid;
@@ -335,12 +327,12 @@ function _fetch_ua_orgs($url = '') {
     $objs = json_decode($f);
     //
     $o = array();
-	$needOne = true;
+  $needOne = true;
     do {
       $obj = array_pop($objs);
       /* I am going to rebuild the hierarchy to flatten out the object structure a bit.
        * obj.UaOrg, obj.ParentUAOrg, and obj.ChildUAOrg all have internal structure.
-	* Child Ua Org is a list of objects that have ids.
+  * Child Ua Org is a list of objects that have ids.
        * Rather than step through all of it I am going to rely on the fact that
        * there is a single parent and multiple children.
        * If an object has no children (leaf node) then build it.

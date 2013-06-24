@@ -1,215 +1,31 @@
 <?php
-function directory_build_user_term_index($edit, $account) {
-  /*
-   * This is a hack/extension of the taxonomy_build_node_index function
-   * but for users. It references a table called directory_user_term_index
-   * described in directory.install. It is a denormalized table of term/user
-   * relationships for active users.
-   * because it is a directory, the list of eligible users needs to be large
-   * even if they never actually authenticate into the directory, b/c others
-   * have to be able to find them.
-   */
-  dsm($edit);
-  dsm($account);
-  $status = NULL;
-  // Only maintain the index for active (not blocked) users.
-  if ($edit['status']) {
-    // Collect a unique list of all the term IDs from all user fields
-    //dsm('madeit');
-    $tid_all = array();
-    foreach (field_info_instances('user', 'user') as $instance) {
-      $field_name = $instance['field_name'];
-      $field = field_info_field($field_name);
-      //dsm($field);
-      if ($field['module'] == 'taxonomy' && $field['storage']['type'] == 'field_sql_storage') {
-        // If a field value is not set in the object when user_save() is
-        // called, the old value from is used.
-        if (isset($edit[$field_name])) {
-          $items = $edit[$field_name];
-        }
-        //tcb: this is from the node version. not sure if i need it.
-        elseif (isset($account->{$field_name})) {
-         $items = $account->{$field_name};
-        }
-        else {
-          continue;
-        }
-        foreach (field_available_languages('user', $field) as $langcode) {
-          if (!empty($items[$langcode])) {
-            foreach ($items[$langcode] as $item) {
-              $tid_all[$item['tid']] = $item['tid'];
-            }
-          }
-        }
-      }
-    }
-    // Insert index entries for all the users's terms.
-    if (!empty($tid_all)) {
-      $query = db_insert('directory_user_term_index')->fields(array('uid', 'tid'));
-      foreach ($tid_all as $tid) {
-        $query->values(array(
-          'uid' => $account->uid,
-          'tid' => $tid,
-        ));
-      }
-      $query->execute();
-            //drupal_set_message('updated duti');
-    }
-  }
-}
-function directory_delete_user_term_index($user) {
-    db_delete('directory_user_term_index')->condition('uid', $user->uid)->execute();
-}
-/*
- * Implements hook_user_delete().
- */
-function directory_user_delete($user) {
-  // Clean up the {directory_user_term_index} table when users are deleted.
-  directory_delete_user_term_index($user);
-}
-/*
- * implements hook_user_insert()
- */
-function directory_user_insert(&$edit, $account, $category) {
-  // Add taxonomy index entries for the user.
-  directory_build_user_term_index($edit, $account);
-}
-/*
- * Implements hook_user_update()
- */
-function directory_user_update(&$edit, $account, $category) {
-  // Always rebuild the node's taxonomy index entries on node save.
-  directory_delete_user_term_index($account);
-  directory_build_user_term_index($edit, $account);
-}
-/*
- * Implements hook_taxonomy_term_delete()
- */
-function directory_taxonomy_term_delete($term) {
-  // Clean up the {taxonomy_index} table when terms are deleted.
-  db_delete('directory_user_term_index')->condition('tid', $term->tid)->execute();
-}
-/*
- * Directory lookup for terms.
- */
-function directory_select_users($tid, $pager = TRUE, $limit = FALSE, $order = array('d.uid' => 'DESC')) {
 
-  $query = db_select('directory_user_term_index', 'd');
-  //$query->addTag('node_access');
-  $query->condition('tid', $tid);
-  if ($pager) {
-    $count_query = clone $query;
-    $count_query->addExpression('COUNT(d.uid)');
-
-    $query = $query->extend('PagerDefault');
-    if ($limit !== FALSE) {
-      $query = $query->limit($limit);
-    }
-    $query->setCountQuery($count_query);
-  }
-  else {
-    if ($limit !== FALSE) {
-      $query->range(0, $limit);
-    }
-  }
-  $query->addField('d', 'uid');
-  $query->addField('d', 'tid');
-  foreach ($order as $field => $direction) {
-    $query->orderBy($field, $direction);
-    // ORDER BY fields need to be loaded too, assume they are in the form
-    // table_alias.name
-    list($table_alias, $name) = explode('.', $field);
-    $query->addField($table_alias, $name);
-  }
-  return $query->execute()->fetchCol();
-}
-//add a new view mode
-function directory_entity_info_alter(&$entity_info) {
-  $entity_info['taxonomy_term']['view modes']['directory'] = array(
-    'label' => t('Directory'),
-    'custom settings' => TRUE,
+/*
+ * Implements hook_node_info
+ */
+function directory_node_info() {
+  return array(
+    'directory_profile' => array(
+      'name' => t('Directory Profile'),
+      'base' => 'directory_profile',
+      'description' => t('Directory Information.'),
+      'has_title' => TRUE,
+      'locked' => FALSE,
+    ),
   );
+  return $squawk_update;
 }
 /*
- * Implements hook_taxonomy_term_view()
- *
- * included is the code from taxonomy_term_page. I am adding only a
- * 'directory view' to attach user info. b/c this occurs earlier in the flow
- * than the node loading, something might have to be done with the 'no content'
- * render array element...
- *
-  // Normally we would call taxonomy_term_show() here, but for backwards
-  // compatibility in Drupal 7 we do not want to do that (it produces different
-  // data structures and HTML markup than what Drupal 7 released with). Calling
-  // taxonomy_term_view() directly provides essentially the same thing, but
-  // allows us to wrap the rendered term in our desired array structure.
-  $build['term_heading'] = array(
-    '#prefix' => '<div class="term-listing-heading">',
-    '#suffix' => '</div>',
-    'term' => taxonomy_term_view($term, 'full'),
+ * Implements hook_form
+ */
+function directory_form($node, &$form_state) {
+  $form = array();
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => check_plain($type->title_label),
+    '#default_value' => !empty($node->title) ? $node->title : '',
+    '#required' => TRUE,
+    '#weight' => -5,
   );
-
-  if ($nids = taxonomy_select_nodes($term->tid, TRUE, variable_get('default_nodes_main', 10))) {
-    $nodes = node_load_multiple($nids);
-    $build += node_view_multiple($nodes);
-    $build['pager'] = array(
-      '#theme' => 'pager',
-      '#weight' => 5,
-    );
-  }
-  else {
-    $build['no_content'] = array(
-      '#prefix' => '<p>',
-      '#markup' => t('There is currently no content classified with this term.'),
-      '#suffix' => '</p>',
-    );
-  }
-
- */
-function directory_taxonomy_term_view($term, $view_mode, $langcode) {
-  /*
-   *
-   */
-  if ($view_mode == 'directory' || $view_mode == 'full') {
-    //load users tagged with this term
-    if ($uids = directory_select_users($term->tid, TRUE, FALSE)) {
-      $users = user_load_multiple($uids);
-      $term->content['users'] = array(
-        '#theme' => 'user_list',
-        '#users' => $users,
-        '#prefix' => '<div>',
-        '#suffix' => '</div>',
-      );
-      /*foreach($users as $account) {
-        //$term->content['users'][$account->uid] = array('#type' => 'container');
-
-        $term->content['users'][$account->uid] = array(
-          'name' => array(
-            '#markup' => format_username($account),
-            '#prefix' => '<h3>',
-            '#suffix' => '</h3>',
-          ),
-          //'details' => user_view($account, $view_mode = 'full', $langcode = NULL),
-        );
-      }*/
-    }
-    else {
-      $term->content['no_users'] = array(
-        '#prefix' => '<p>',
-        '#markup' => t('There are currently no users classified with this term'),
-        '#suffix' => '</p>',
-      );
-    }
-  }
+  return $form;
 }
-/*
- * Implements hook_taxonomy_term_view_alter
- *
- */
-function directory_taxonomy_term_view_alter(&$build) {
-  //need to see what $build looks like. If the view mode is
-  //directory and the 'users content' is set, don't display the
-  //['no_content'] message associated with the node version above.
-  ///not here. it is done in taxonomy term page so the key doesn't exist
-  //when this gets made.
-  }
