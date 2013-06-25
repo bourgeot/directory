@@ -6,10 +6,16 @@
  */
 function directory_enable() {
   $t = get_t();
-
   //create some vocabularies
   $vocabs = array(
-    array(
+    'directory_ids' =>array(
+      'name' => 'Directory IDs',
+      'machine_name' => 'directory_ids',
+      'description' => 'Known accounts and individuals',
+      'hierarchy' => 1, //flat
+      'module' => 'directory',
+    ),
+    'ua_locations' => array(
       'name' => 'UA Locations',
       'machine_name' => 'ua_locations',
       'description' => 'Locations at the University of Arizona',
@@ -17,7 +23,7 @@ function directory_enable() {
       'module' => 'directory',
       //'weight' => 1,
     ),
-    array(
+    'ua_orgs' => array(
       'name' => 'UA Organizations',
       'machine_name' => 'ua_orgs',
       'description' => 'Organizations in the UA HR system',
@@ -25,7 +31,7 @@ function directory_enable() {
       'module' => 'directory',
       //'weight' => 3,
     ),
-    array(
+    'ua_affiliations' => array(
       'name' => 'UA Affiliations',
       'machine_name' => 'ua_affiliations',
       'description' => 'Ways that people are affiliated with the University of Arizona',
@@ -33,7 +39,7 @@ function directory_enable() {
       'module' => 'directory',
       //'weight' => 2,
     ),
-    array(
+    'sa_interests' => array(
       'name' => 'SA Interests',
       'machine_name' => 'sa_interests',
       'description' => 'University of Arizona Student Affairs Professional Interests',
@@ -41,7 +47,7 @@ function directory_enable() {
       'module' => 'directory',
       //'weight' => 2,
     ),
-    array(
+    'alphabet' => array(
       'name' => 'Alphabet',
       'machine_name' => 'alphabet',
       'description' => 'Notational Convenience',
@@ -49,14 +55,14 @@ function directory_enable() {
       'module' => 'directory',
       //'weight' => 3,
     ),
-    array(
+    /*'months' => array(
       'name' => 'Months',
       'machine_name' => 'months',
       'description' => 'Notational Convenience',
       'hierarchy' => 0, //flat
       'module' => 'directory',
       //'weight' => 3,
-    ),
+    ),*/
   );
   // Create the term vocabularies and the reference field definitions.
   foreach ($vocabs as $vocab) {
@@ -93,7 +99,7 @@ function directory_enable() {
         'bundle' => 'directory_profile',
       );
       field_create_instance($instance);
-      drupal_set_message('Field Definition ' . $instance['id'] . ' created.');
+      drupal_set_message('Field Instance ' . $instance['field_name'] . ' created.');
 
     }
   }
@@ -108,7 +114,14 @@ function directory_enable() {
    * performed in the .module file. hook_form must be implemented and the title
    * must be returned to get this to show in the list of content types.
    */
-
+  foreach(directory_field_defs() as $field) {
+    $fd = field_create_field($field);
+    drupal_set_message('Created field definition ' . $fd['field_name']);
+  }
+  foreach(directory_field_instances() as $instance) {
+    $fi = field_create_instance($instance);
+    drupal_set_message('Created field instance '  . $fi['field_name']);
+  }
   node_types_rebuild();
   $types = node_type_get_types();
   node_add_body_field($types['directory_profile']);
@@ -126,7 +139,8 @@ function directory_enable() {
 function directory_disable() {
   $vocabs = array(
     'ua_locations',
-    //'ua_orgs',
+    'ua_orgs',
+    'directory_ids',
     'ua_affiliations',
     'sa_interests',
     'alphabet',
@@ -143,6 +157,20 @@ function directory_disable() {
         field_purge_batch(1000);
       }
   }
+// Loop over each of the fields defined by this module and delete
+  // all instances of the field, their data, and the field itself.
+  foreach (array_keys(directory_field_defs()) as $field) {
+    field_delete_field('field_' . $field);
+  }
+
+  // Loop over any remaining field instances attached to the our
+  //content type and delete them individually.
+  $instances = field_info_instances('node', 'directory_profile');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+  //tidy up
+  field_purge_batch(1000);
 }
 function directory_loader($vocabulary_name) {
   $vid = variable_get($vocabulary_name . '_vocabulary', 0);
@@ -280,6 +308,11 @@ function directory_loader($vocabulary_name) {
           $count++;
         }
       break;
+      case 'directory_ids':
+        //first, amass all the currently active users and see if they have
+        //terms associated with their names. If so, fine. If not, add them.
+        $count = count(create_new_ids());
+      break;
     }
     drupal_set_message('Added ' . $count . ' terms to ' . $vocabulary_name . '.', 'status');
   }
@@ -362,4 +395,87 @@ function _fetch_ua_orgs($url = '') {
   else {
     return FALSE;
   }
+}
+function directory_field_defs() {
+  return array(
+    'first_name' => array(
+      'field_name' => 'field_first_name',
+      'type' => 'text',
+      'cardinality' => 1,
+      'label' => 'First Name',
+      'settings' => array(
+        'max_length' => 255,
+      ),
+    ),
+    'last_name' => array(
+      'field_name' => 'field_last_name',
+      'type' => 'text',
+      'cardinality' => 1,
+      'label' => 'Last Name',
+      'settings' => array(
+        'max_length' => 255,
+      ),
+    ),
+    'primary_title' => array(
+      'field_name' => 'field_primary_title',
+      'type' => 'text',
+      'cardinality' => 1,
+      'label' => 'Primary Title',
+      'settings' => array(
+        'max_length' => 255,
+      ),
+    ),
+    'department' => array(
+      'field_name' => 'field_department',
+      'type' => 'text',
+      'cardinality' => 1,
+      'label' => 'Department',
+      'settings' => array(
+        'max_length' => 255,
+      ),
+    ),
+    'primary_phone' => array(
+      'field_name' => 'field_primary_phone',
+      'type' => 'text',
+      'cardinality' => 1,
+      'label' => 'Primary Phone',
+      'settings' => array(
+        'max_length' => 10,
+      ),
+    ),
+  );
+}
+function directory_field_instances() {
+  return array(
+    'first_name' => array(
+      'field_name' => 'field_first_name',
+      'entity_type' => 'node',
+      'bundle' => 'directory_profile',
+      'label' => 'First Name',
+    ),
+    'last_name' => array(
+      'field_name' => 'field_last_name',
+      'entity_type' => 'node',
+      'bundle' => 'directory_profile',
+      'label' => 'Last Name',
+    ),
+    'primary_title' => array(
+      'field_name' => 'field_primary_title',
+      'entity_type' => 'node',
+      'bundle' => 'directory_profile',
+      'label' => 'Primary Title',
+    ),
+    'department' => array(
+      'field_name' => 'field_department',
+      'entity_type' => 'node',
+      'bundle' => 'directory_profile',
+      'label' => 'Department',
+    ),
+    'primary_phone' => array(
+      'field_name' => 'field_primary_phone',
+      'entity_type' => 'node',
+      'bundle' => 'directory_profile',
+      'label' => 'Primary Phone',
+    ),
+  );
 }

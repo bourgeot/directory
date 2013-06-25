@@ -19,13 +19,155 @@ function directory_node_info() {
  * Implements hook_form
  */
 function directory_form($node, &$form_state) {
-  $form = array();
-  $form['title'] = array(
-    '#type' => 'textfield',
-    '#title' => check_plain($type->title_label),
-    '#default_value' => !empty($node->title) ? $node->title : '',
-    '#required' => TRUE,
-    '#weight' => -5,
-  );
-  return $form;
+   return node_content_form($node, $form_state);
+}
+/*
+ * Implements hook_form_alter
+ */
+function directory_form_alter(&$form, &$form_state, $form_id) {
+    if ($form_id == 'directory_profile_node_form') {
+      drupal_set_message('here in alter');
+    }
+}
+
+function directory_node_presave($node) {
+  if($node->type == 'directory_profile') {
+  //The title is <name>'s profile
+
+
+  }
+
+}
+function create_new_ids($include_ldap = NULL) {
+  //find new users or people who don't have taxonomy terms yet.
+  $vid = variable_get('directory_ids_vocabulary', 0);
+  $tids = array();
+  if ($vid>0) {
+    $query = 'SELECT u.name FROM {users} u' .
+      ' LEFT JOIN {taxonomy_term_data} t ON u.name = t.name' .
+      ' WHERE t.name IS NULL AND u.status = 1';
+    $result = db_query($query)->fetchAll();
+    dsm($result);
+    foreach($result as $record) {
+      //$record->name is available
+      $new_term = array(
+        'name' => $record->name,
+        'description' => $desc,
+        'vid' => $vid,
+      );
+      $term_obj = (object) $new_term;
+      taxonomy_term_save($term_obj);
+      $tids[]=$term_obj->tid;
+    }
+  }
+  if($include_ldap) {
+
+  }
+  return $tids;
+}
+/*
+ * Query Ldap
+ */
+function directory_query_ldap($depts = array()) {
+    if(count($depts == 0)) {
+      $depts[] = '8107';
+    }
+    $result = array();
+    // setup LDAP parameters
+    $ldapUrl = "ldaps://eds.arizona.edu";
+    $ldapPort = 636;
+    $bindDn = "uid=sasg-drupal,ou=App Users,dc=eds,dc=arizona,dc=edu";
+    $bindPw = "Jm2GvdiyeSQKB7UL8zeAjmW59Hdz2yAP";
+    $searchBase = "ou=People,dc=eds,dc=arizona,dc=edu";
+    //$searchFilter = "(uid=bourgeot)";
+  $deptStr ='(|';
+  foreach($depts as $dept) {
+    $deptStr .= '(employeePrimaryDept=' . $dept . ')';
+  }
+  $deptStr .= ')';
+
+  $parms['filter'] = '(&(employeeStatus=A)(!(uaid=T*))' . $deptStr . ')';
+  //$parms['attrs'] = array('uid','cn','sn','mail','givenName','eduPersonPrimaryAffiliation','dateOfBirth','');
+  $parms['attrs'] = array(
+    'placeholder',
+    //'cn',
+    'sn',
+    'givenName',
+    'eduPersonPrimaryAffiliation',
+    'uid',
+    //'mail',
+    'dateOfBirth',
+    'employeeBldgNum',
+    'employeeBldgName',
+    //'employeeIsFerpaTrained',
+    //'employeeOfficialOrg',
+    'employeePhone',
+    //'employeePrimaryDept',
+    'employeePrimaryTitle',
+    //'employeeStatus',
+    //'eduPersonAffiliation'
+  );// mult
+
+  // establish LDAP connection
+  $ldap = ldap_connect($ldapUrl,$ldapPort);
+  if (! $ldap) {
+    error_log("Could not connect to LDAP server");
+  }
+  // bind as app user
+  if (! ldap_bind($ldap, $bindDn, $bindPw)) {
+    error_log(ldap_error($ldap));
+  }
+  // retrieve entry
+  $i=0;
+  $sr = ldap_search($ldap, $searchBase, $parms['filter'], $parms['attrs']);
+  $e=ldap_get_entries($ldap,$sr);
+  $entry = ldap_first_entry($ldap, $sr);
+  while ($entry) {
+      foreach($parms['attrs'] as $attr) {
+        if ($attr != 'placeholder') {
+          $vals = ldap_get_values($ldap, $entry, $attr);
+        //$attrs = ldap_get_attributes($ldap, $entry);
+      //dsm($vals);
+      //dsm($attrs);
+        //$results[] = $attrs;
+      //$i++;
+          $result[$i][$attr]=$vals[0];
+        }
+      }
+      $i++;
+    $entry = ldap_next_entry($ldap, $entry);
+  }
+
+  ldap_close($ldap);
+ //dsm($output);
+  return $result;
+}
+function get_query_depts($dept='VP for Student Affairs') {
+  $terms=array();
+  $vid = variable_get('ua_orgs_vocabulary',0);
+  $base_terms = taxonomy_get_term_by_name($dept, 'ua_orgs');
+  if(!empty($base_terms)) {
+    //should be one entry
+    dsm($base_terms);
+    foreach($base_terms as $tid=>$base) {
+      $terms = directory_taxonomy_get_children_all($tid, $vid);
+    }
+    //append the base term to the set
+    //$terms[] = $term;
+  }
+  return $terms;
+}
+function directory_taxonomy_get_children_all($tid, $vid = 0, $key = 'tid'){
+$c = taxonomy_get_children($tid, $vid, $key);
+$result = array();
+foreach ($c as $t => $d){
+$result[$t] = $d;
+$below = directory_taxonomy_get_children_all($t, $vid, $key);
+if (!empty($below)) {
+foreach ($below as $nt => $nd){
+$result[$nt] = $nd;
+}
+}
+}
+return $result;
 }
