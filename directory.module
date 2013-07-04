@@ -33,11 +33,21 @@ function directory_form_alter(&$form, &$form_state, $form_id) {
 function directory_node_presave($node) {
   if($node->type == 'directory_profile') {
   //The title is <name>'s profile
-
-
+    if(is_null($node->title)){
+      if(!empty($node->field_first_name[LANGUAGE_NONE][0]['value']) &&
+        !empty($node->field_last_name[LANGUAGE_NONE][0]['value'])) {
+          $node->title = $node->field_first_name[LANGUAGE_NONE][0]['value']
+            . ' ' . $node->field_last_name[LANGUAGE_NONE][0]['value']
+            . '\'s Profile';
+      }
+      else {
+        $node->title = 'Directory Profile';
+      }
+    }
   }
 
 }
+
 function create_new_ids($include_ldap = NULL) {
   //find new users or people who don't have taxonomy terms yet.
   $vid = variable_get('directory_ids_vocabulary', 0);
@@ -142,6 +152,91 @@ function directory_query_ldap($depts = array()) {
  //dsm($output);
   return $result;
 }
+function create_profile_node($p) {
+  //creates a profile node for $p.
+/*
+0 (Array, 9 elements)
+    sn (String, 8 characters ) Rallison
+    givenName (String, 17 characters ) Gabriel Kartchner
+    eduPersonPrimaryAffiliation (String, 7 characters ) student
+    uid (String, 8 characters ) rallison
+    dateOfBirth (String, 8 characters ) 19901219
+    employeeBldgNum (String, 4 characters ) 409A
+    employeeBldgName (String, 28 characters ) Enrollment Mngmt Systems Grp
+    employeePhone (String, 10 characters ) 5206260755
+    employeePrimaryTitle (String, 15 characters ) Student Group B
+
+        $node_copy = new stdClass();
+        $node_copy = clone $node;
+        $node_copy->nid = NULL;
+        $node_copy->vid = NULL;
+        $node_copy->tnid = NULL;
+        $node_copy->created = NULL;
+        $node_copy->path = NULL;
+        $node_copy->field_recipient[LANGUAGE_NONE][0]['value'] = $recipient;
+        node_save($node_copy);
+        $success = $node_copy->nid;
+        if ($success > 0) {
+          drupal_set_message($node->nid, 'status');
+
+*/
+  //make sure $p is an array
+  //setup a new node
+  $node = new stdClass();
+  $node->type = 'directory_profile';
+  $node->language = LANGUAGE_NONE;
+  $node->nid = NULL;
+  $node_copy->vid = NULL;
+  $node_copy->tnid = NULL;
+  $node_copy->created = NULL;
+  $node_copy->path = NULL;
+  $node->uid = 1; //created by user 1 initially
+  $node->log = 'created programmatically';
+  $node->status = 1;
+  $node->comment = 0;
+  $node->promote = 0;
+  $node->sticky = 0;
+  if(!empty($p['']) && !empty($p['sn'])) {
+    $node->title = $p['givenName'] . ' ' . $p['sn'] . '\'s Profile';
+  }
+  else {
+    $node->title = $p['uid'] . '\'s Profile';
+  }
+  //set up for fetching terms from the varaious vocabularies.
+  //find the location or add it if it hasn't been encountered yet
+  $vid = variable_get('ua_locations_vocabulary');
+  $term_array = taxonomy_get_term_by_name($p['employeeBldgName'], $vid);
+  if (empty($term_array)) {
+    //add it
+    $term_obj= _create_term($vid, $p['employeeBldgName'], $p['employeeBldgNum']);
+  }
+  else {
+    $term_obj = $term_array[0];
+  }
+  $node->field_ua_locations[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+  //letter
+  $vid = variable_get('alphabet_vocabulary');
+  $term_array = taxonomy_get_term_by_name($p['sn'][0], $vid);
+  $term_obj = $term_array[0];
+  $node->field_alphabet[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+  //dept
+  $vid = variable_get('ua_organizations_vocabulary');
+  $term_array = taxonomy_get_term_by_name($p['employeePrimaryDept'], $vid);
+  $term_obj = $term_array[0];
+  $node->field_department[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+  //affiliation
+  $vid = variable_get('ua_affiliations_vocabulary');
+  $term_array = taxonomy_get_term_by_name($p['eduPersonPrimaryAffiliation'], $vid);
+  $term_obj = $term_array[0];
+  $node->field_ua_affiliations[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+  node_save($node);
+  if($node->nid != NULL) {
+    return $node;
+  }
+  else {
+    return FALSE;
+  }
+}
 function get_query_depts($dept='VP for Student Affairs') {
   $terms=array();
   $vid = variable_get('ua_orgs_vocabulary',0);
@@ -170,4 +265,13 @@ $result[$nt] = $nd;
 }
 }
 return $result;
+}
+/*
+ * Implements hook_menu()
+ */
+function directory_menu() {
+ $items = array(
+
+ );
+ return $items;
 }
