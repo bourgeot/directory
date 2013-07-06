@@ -105,14 +105,14 @@ function directory_query_ldap($depts = array()) {
     'givenName',
     'eduPersonPrimaryAffiliation',
     'uid',
-    //'mail',
+    'mail',
     'dateOfBirth',
     'employeeBldgNum',
     'employeeBldgName',
     //'employeeIsFerpaTrained',
     //'employeeOfficialOrg',
     'employeePhone',
-    'employeePrimaryDept',
+    'employeePrimaryDeptName',
     'employeePrimaryTitle',
     //'employeeStatus',
     //'eduPersonAffiliation'
@@ -220,17 +220,15 @@ function directory_create_profile_node($p) {
     }
     //set up text fields
     $node->field_first_name[LANGUAGE_NONE][0]['value'] = $p['givenName'];
-     $node->field_last_name[LANGUAGE_NONE][0]['value'] = $p['sn'];
-
+    $node->field_last_name[LANGUAGE_NONE][0]['value'] = $p['sn'];
+    $node->field_birthdate[LANGUAGE_NONE][0]['value']= substr($p['dateOfBirth'], 0, 4) . '-'
+      . substr($p['dateOfBirth'], 4, 2) . '-'
+      . substr($p['dateOfBirth'], 6, 2) . ' 00:00:00';
     $node->field_primary_title[LANGUAGE_NONE][0]['value'] = $p['employeePrimaryTitle'];
-
+    $node->field_ua_email[LANGUAGE_NONE][0]['value'] = $p['mail'];
     $node->field_primary_phone[LANGUAGE_NONE][0]['value'] = $p['employeePhone'];
-
-
     //set up for fetching terms from the varaious vocabularies.
     //find the location or add it if it hasn't been encountered yet
-    //$vid = variable_get('ua_locations_vocabulary');
-
     $term_array = taxonomy_get_term_by_name($p['employeeBldgName'], 'ua_locations');
     dsm($term_array);
     if (empty($term_array)) {
@@ -247,15 +245,24 @@ function directory_create_profile_node($p) {
     $term_obj = array_shift($term_array);
     $node->field_alphabet[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
     //dept
-    $vid = variable_get('ua_orgs_vocabulary');
-    $term_array = taxonomy_get_term_by_name($p['employeePrimaryDept'], 'ua_orgs');
+    $term_array = taxonomy_get_term_by_name($p['employeePrimaryDeptName'], 'ua_orgs');
     $term_obj = array_shift($term_array);
-    //$node->field_department[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+    $node->field_department[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
     //affiliation
-    $vid = variable_get('ua_affiliations_vocabulary');
     $term_array = taxonomy_get_term_by_name($p['eduPersonPrimaryAffiliation'], 'ua_affiliations');
     $term_obj = array_shift($term_array);
     $node->field_ua_affiliations[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+    //directory id
+    $term_array = taxonomy_get_term_by_name($p['uid'], 'directory_ids');
+    dsm($term_array);
+    if (empty($term_array)) {
+      //add it
+      $term_obj= directory_create_term('directory_ids', $p['uid']);
+    }
+    else {
+      $term_obj = array_shift($term_array);
+    }
+    $node->field_directory_id[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
   }
   node_save($node);
   if($node->nid != NULL) {
