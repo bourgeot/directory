@@ -156,13 +156,69 @@ function directory_create_profile_nodes() {
   //conjure what departments to create nodes for
   //for each department, fetch the ldap entries
   //create nodes for that department
-  $entries = directory_query_ldap();
-  dsm($entries);
-  foreach ($entries as $entry) {
-    $node = directory_create_profile_node($entry);
-    dsm($node->title . ' created.');
+  $division_tid = array_shift(array_keys(taxonomy_get_term_by_name('VP For Student Affairs')));
+  $division_array = directory_taxonomy_get_children_all($division_tid);
+  foreach($division_array as $dept_term) {
+    $entries = directory_query_ldap(array($dept_term->description));
+    //dsm($entries);
+    foreach ($entries as $entry) {
+      //only create nodes for rows with uids
+      if(!empty($entry['uid'])) {
+        //see if we have run into it before
+        $tq = db_query("SELECT tid FROM {taxonomy_term_data} WHERE name = :name",
+          array(':name' => $entry['uid'])) -> fetchField();
+        if(!empty($tq)) {
+          //we have. get the nid.
+          $n = db_query("SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
+          array(':tid' => $tq)) -> fetchField();
+
+          //directory_update_profile_node();
+        }
+        else {
+          //nope
+          $node = directory_create_profile_node($entry);
+        }
+      }
+      //dsm($node->title . ' created.');
+    }
+    drupal_set_message('created entries for ' . $dept_term->name);
   }
 }
+function directory_update_profile_node($node, $updates = array(), $override = FALSE) {
+  //update has the form key=>value where the key is the node field
+  //to update and the value is the token to update it with
+  //default mode is to only update a value if it is empty unless override is true,
+  //and then everything will be updated.
+
+  if(empty($updates)) {
+    //fetch the fields associated with the node type.
+    $fields = field_info_instances('node', $node->type);  //directory_profile
+    foreach ($fields as $field_name => $value) {
+      $field_info = field_info_field($field_name);
+      $type = $field_info['type'];
+      dsm($fields);
+      foreach($updates as $node_field=>$update) {
+        if($node_field == $field_name) {
+          //match
+          if($override == TRUE) {
+            switch ($type) {
+              case 'taxonomy_term_reference':
+              break;
+              case 'text':
+              break;
+              case 'datetime':
+              break;
+              case 'int':
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  return $node;
+}
+
 function directory_create_profile_node($p) {
   //creates a profile node for $p.
 /*
@@ -207,7 +263,7 @@ function directory_create_profile_node($p) {
   $node->comment = 0;
   $node->promote = 0;
   $node->sticky = 0;
-  $node->title = '';
+  $node->title = 'Directory Profile';
   node_save($node);
   if($node->nid != NULL) {
     //node_load($node);
@@ -230,7 +286,7 @@ function directory_create_profile_node($p) {
     //set up for fetching terms from the varaious vocabularies.
     //find the location or add it if it hasn't been encountered yet
     $term_array = taxonomy_get_term_by_name($p['employeeBldgName'], 'ua_locations');
-    dsm($term_array);
+    //dsm($term_array);
     if (empty($term_array)) {
       //add it
       $term_obj= directory_create_term('ua_locations', $p['employeeBldgName'], $p['employeeBldgNum']);
@@ -254,10 +310,10 @@ function directory_create_profile_node($p) {
     $node->field_ua_affiliations[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
     //directory id
     $term_array = taxonomy_get_term_by_name($p['uid'], 'directory_ids');
-    dsm($term_array);
+    //dsm($term_array);
     if (empty($term_array)) {
       //add it
-      $term_obj= directory_create_term('directory_ids', $p['uid']);
+      $term_obj= directory_create_term('directory_ids', $p['uid'], $p['givenName'] . ' ' . $p['sn']);
     }
     else {
       $term_obj = array_shift($term_array);
@@ -272,20 +328,32 @@ function directory_create_profile_node($p) {
     return FALSE;
   }
 }
-function get_query_depts($dept='VP for Student Affairs') {
+function get_query_depts($dept='VP for Student Affairs', $output='array') {
   $terms=array();
   $vid = variable_get('ua_orgs_vocabulary',0);
   $base_terms = taxonomy_get_term_by_name($dept, 'ua_orgs');
   if(!empty($base_terms)) {
     //should be one entry
-    dsm($base_terms);
+    //dsm($base_terms);
     foreach($base_terms as $tid=>$base) {
       $terms = directory_taxonomy_get_children_all($tid, $vid);
     }
     //append the base term to the set
     //$terms[] = $term;
   }
-  return $terms;
+  foreach($terms as $term) {
+    $result[] = array($term->name, $term->description);
+  }
+  if ($output == 'text') {
+    $results = '';
+    foreach ($result as $item) {
+      $results.=$item[0] . ': ' . $item[1] . '\n';
+    }
+    return $results;
+  }
+  else {
+    return $result;
+  }
 }
 function directory_taxonomy_get_children_all($tid, $vid = 0, $key = 'tid'){
 $c = taxonomy_get_children($tid, $vid, $key);
@@ -339,3 +407,14 @@ function directory_create_term($vocab_name, $term, $desc = '', $weight = 0, $add
     else { return 'trouble'; }
   }
 }
+function directory_total_term_items($tid) {
+
+  $result = db_query('SELECT n.nid FROM taxonomy_index rd INNER JOIN node n ON rd.nid = n.nid WHERE rd.tid = :tid AND n.status = 1 ', array(':tid' => $tid));
+  $count = count($result->fetchCol());
+  return $count;
+
+}
+function directory_build_profile_json($term = array()) {
+  $result = array();
+  return drupal_json_encode($result);
+  }
