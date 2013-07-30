@@ -495,5 +495,30 @@ function directory_force_diagram() {
   drupal_add_js('sites/all/modules/directory/js/force.js', 'file');
   drupal_add_css('sites/all/modules/directory/css/force.css', 'file');
   //drupal_set_title('hi');
-  return 'hello';
+  return array(
+    '#theme' => 'container',
+    '#attributes' => array(
+      'id' => 'diagram',
+    ),
+  );
+
+}
+/*
+ * implements hook_views_api()
+ */
+function directory_views_api() {
+  return array(
+    ‘api’ => 2,
+  );
+}
+//drupal stores parent. d3 wants children.
+//so taxonomy_get_tree has depth as well.
+function directory_items($vid) {
+  $vid=92;
+$query = db_select('taxonomy_term_data', 't');
+    $query->join('taxonomy_term_hierarchy', 'h', 'h.tid = t.tid');
+$query->leftJoin('taxonomy_index', 'i', 't.tid = i.tid');
+    $result = $query->addTag('translatable')->addTag('term_access')->fields('t')->fields('i', array('nid'))->fields('h', array('parent'))->condition('t.vid', $vid)->orderBy('t.weight')->orderBy('t.name')->execute();
+dsm($result);
+
 }

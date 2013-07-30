@@ -9,8 +9,8 @@ d3.json("http://threads.dev/diagrams/views/alphabet.json", function(error, links
       (nodes[link.target] = {name: link.target});
     link.value = +link.value;
   });
-  var width = 960,
-  height = 500;
+  var width = 500,
+  height = 300;
   var force = d3.layout.force()
     .nodes(d3.values(nodes))
     .links(links)
@@ -35,7 +35,7 @@ d3.json("http://threads.dev/diagrams/views/alphabet.json", function(error, links
       link.type = "onezerozero";
     }
   });
-  var svg = d3.select("body").append("svg")
+  var svg = d3.select("#diagram").append("svg")
     .attr("width", width)
     .attr("height", height);
   // build the arrow.
