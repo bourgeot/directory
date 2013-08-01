@@ -13,7 +13,6 @@ function directory_node_info() {
       'locked' => FALSE,
     ),
   );
-  return $squawk_update;
 }
 /*
  * Implements hook_form
@@ -37,11 +36,10 @@ function directory_node_presave($node) {
       if(!empty($node->field_first_name[LANGUAGE_NONE][0]['value']) &&
         !empty($node->field_last_name[LANGUAGE_NONE][0]['value'])) {
           $node->title = $node->field_first_name[LANGUAGE_NONE][0]['value']
-            . ' ' . $node->field_last_name[LANGUAGE_NONE][0]['value']
-            . '\'s Profile';
+            . ' ' . $node->field_last_name[LANGUAGE_NONE][0]['value'];
       }
       else {
-        $node->title = 'Directory Profile';
+        $node->title = 'Directory Entry';
       }
     }
   }
@@ -317,10 +315,10 @@ function directory_create_profile_node($p) {
     //node_load($node);
     //dsm($node);
     if(!empty($p['field_first_name']) && !empty($p['field_last_name'])) {
-      $node->title = $p['field_first_name'] . ' ' . $p['field_last_name'] . '\'s Profile';
+      $node->title = $p['field_first_name'] . ' ' . $p['field_last_name'];
     }
     else {
-      $node->title = $p['field_directory_id'] . '\'s Profile';
+      $node->title = $p['field_directory_id'];
     }
     //set up text fields
     $node->field_first_name[LANGUAGE_NONE][0]['value'] = $p['field_first_name'];
@@ -449,6 +447,17 @@ function directory_menu() {
       'access callback' => true,
       'type' => MENU_CALLBACK,
     ),
+    'directory/json' =>array(
+      'title' => 'UA Organizations',
+      'page callback' => 'directory_items',
+      'access callback' => true,
+      'delivery callback' => 'drupal_json_output',
+    ),
+    'directory/test' => array(
+      'title' => 'directory test',
+      'page callback' => 'directory_test',
+      'access callback' => true,
+    ),
   );
  return $items;
 }
@@ -503,22 +512,70 @@ function directory_force_diagram() {
   );
 
 }
-/*
- * implements hook_views_api()
- */
-function directory_views_api() {
-  return array(
-    ‘api’ => 2,
-  );
-}
+
 //drupal stores parent. d3 wants children.
 //so taxonomy_get_tree has depth as well.
-function directory_items($vid) {
+function directory_items($vid = NULL) {
   $vid=92;
-$query = db_select('taxonomy_term_data', 't');
-    $query->join('taxonomy_term_hierarchy', 'h', 'h.tid = t.tid');
-$query->leftJoin('taxonomy_index', 'i', 't.tid = i.tid');
-    $result = $query->addTag('translatable')->addTag('term_access')->fields('t')->fields('i', array('nid'))->fields('h', array('parent'))->condition('t.vid', $vid)->orderBy('t.weight')->orderBy('t.name')->execute();
-dsm($result);
+  $items = array();
+  $query = "SELECT t.tid, t.name, v.name as vname, t.description, n.title, i.nid AS nid, h.parent AS ptid,
+    NULL as children, NULL as parent
+    FROM {taxonomy_term_data} t
+    LEFT OUTER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+    LEFT OUTER JOIN {taxonomy_index} i ON t.tid = i.tid
+    LEFT OUTER JOIN {node} n ON i.nid = n.nid AND n.type = :type
+    LEFT OUTER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
+    WHERE t.vid = :vid";
+  $query = "SELECT t.tid, t.name, v.name as vocab, t.description, h.parent AS ptid,
+    NULL as children, NULL as parent
+    FROM {taxonomy_term_data} t
+    INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+    INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
+    WHERE t.vid = :vid";
+  $result = db_query($query, array(':vid' => $vid));
+  if ($result) {
+    foreach($result->fetchAll() as $record) {
+      $record->children=array();
+      $record->parent = array();
+      $items[]=$record;
+    }
+  }
+
+
+  for($j=0; $j < count($items); $j++) {
+
+    /*for each item, find its parent node and
+    1)assign it to the parent attribute,
+    and
+    2) push self to its parent's children attrribute.
+
+    Special: the root node UNAZ should have no parent.
+    */
+    for($i=0; $i < count($items); $i++) {
+      //if ( dataset[i].id == dataset[j].parentId ) {
+      if ( $items[$j]->description == 'UNAZ' ) {
+        $root = &$items[$j];
+      }
+      else {
+        if ( $items[$i]->tid == $items[$j]->ptid ) {
+          $items[$i]->children[] = &$items[$j];
+        }
+      }
+    }
+  }
+  return $root;
+}
+function directory_test() {
+  //some javascript here.
+  drupal_add_js('sites/all/libraries/d3/d3.js', 'file');
+  drupal_add_js('sites/all/modules/directory/js/tree.js', 'file');
+  drupal_add_css('sites/all/modules/directory/css/tree.css', 'file');
+  //drupal_set_title('hi');
+  return array(
+    '#theme' => 'container',
+    '#attributes' => array(
+      'id' => 'tree',
+    )
+  );
 
 }
