@@ -31,7 +31,7 @@ function directory_form_alter(&$form, &$form_state, $form_id) {
 
 function directory_node_presave($node) {
   if($node->type == 'directory_profile') {
-  //The title is <name>'s profile
+  //The title is <name>
     if(is_null($node->title)){
       if(!empty($node->field_first_name[LANGUAGE_NONE][0]['value']) &&
         !empty($node->field_last_name[LANGUAGE_NONE][0]['value'])) {
@@ -45,7 +45,11 @@ function directory_node_presave($node) {
   }
 
 }
-
+/*
+ * create_new_ids
+ * This will find new users of the site who don't have taxonomy terms
+ * corresponding to their user name yet.
+ */
 function create_new_ids($include_ldap = NULL) {
   //find new users or people who don't have taxonomy terms yet.
   $vid = variable_get('directory_ids_vocabulary', 0);
@@ -75,6 +79,9 @@ function create_new_ids($include_ldap = NULL) {
 }
 /*
  * Query Ldap
+ * I don't like this because it opens and closes the connection in the
+ * function which seems like unecessary overhead.
+ * TODO: support multiply valued fields
  */
 function directory_query_ldap($depts = array()) {
 
@@ -115,26 +122,7 @@ function directory_query_ldap($depts = array()) {
     'uid' => 'field_directory_id',
   );
   $attrs = array_keys($field_map);
-   /*$parms['attrs'] = array(
-    'placeholder',
-    //'cn',
-    'sn',
-    'givenName',
-    'eduPersonPrimaryAffiliation',
-    'uid',
-    'mail',
-    'dateOfBirth',
-    'employeeBldgNum',
-    'employeeBldgName',
-    //'employeeIsFerpaTrained',
-    //'employeeOfficialOrg',
-    'employeePhone',
-    'employeePrimaryDeptName',
-    'employeePrimaryTitle',
-    //'employeeStatus',
-    //'eduPersonAffiliation'
-  );// mult
-  */
+
   // establish LDAP connection
   $ldap = ldap_connect($ldapUrl,$ldapPort);
   if (! $ldap) {
@@ -168,6 +156,8 @@ function directory_query_ldap($depts = array()) {
   ldap_close($ldap);
   return $result;
 }
+/*
+ * I DON'T THINK THIS FUNCTION IS BEING USED
 
 function directory_create_profile_nodes() {
   //conjure what departments to create nodes for
@@ -180,7 +170,12 @@ function directory_create_profile_nodes() {
     //dsm($entries);
     directory_create_dept_profile_nodes($dept_term->description);
   }
-}
+} */
+/*
+ * directory_query_dept_profile_nodes
+ * USES university department number (like 8107 for SASG).
+ */
+
 function directory_create_dept_profile_nodes($dept_num, $override = FALSE) {
     $entries = directory_query_ldap(array($dept_num));
     //dsm($entries);
@@ -260,6 +255,12 @@ function directory_update_profile_node($node, $updates = array(), $override = FA
   return $node;
 }
 
+/*
+ * directory_create_profile_node
+ * This creates the node. Likely this will have to become a hook in order to
+ * make it extensible.
+ */
+
 function directory_create_profile_node($p) {
   //creates a profile node for $p.
 /*
@@ -299,10 +300,10 @@ function directory_create_profile_node($p) {
   $node->type = 'directory_profile';
   $node->language = LANGUAGE_NONE;
   $node->nid = NULL;
-  $node_copy->vid = NULL;
-  $node_copy->tnid = NULL;
-  $node_copy->created = NULL;
-  $node_copy->path = NULL;
+  //$node_copy->vid = NULL;
+  //$node_copy->tnid = NULL;
+  //$node_copy->created = NULL;
+  //$node_copy->path = NULL;
   $node->uid = 1; //created by user 1 initially
   $node->log = 'created programmatically';
   $node->status = 1;
@@ -458,8 +459,20 @@ function directory_menu() {
       'page callback' => 'directory_test',
       'access callback' => true,
     ),
+    'directory/sunburst' => array(
+      'title' => 'directory sunburst',
+      'page callback' => 'directory_sunburst',
+      'access callback' => true,
+    ),
   );
  return $items;
+}
+/*
+ * Implements hook_menu_alter
+ */
+function directory_menu_alter(&$items) {
+  $items['taxonomy/term/%taxonomy_term']['page callback'] = 'directory_taxonomy_term_page';
+  unset($items['taxonomy/term/%taxonomy_term']['file']);
 }
 /**
  * Create a single term and add to a specific vocabulary if not already present
@@ -516,18 +529,20 @@ function directory_force_diagram() {
 //drupal stores parent. d3 wants children.
 //so taxonomy_get_tree has depth as well.
 function directory_items($vid = NULL) {
-  $vid=92;
+  if (is_null($vid)) {
+     $vid = variable_get('ua_orgs_vocabulary');
+    }
   $items = array();
-  $query = "SELECT t.tid, t.name, v.name as vname, t.description, n.title, i.nid AS nid, h.parent AS ptid,
+  /*$query = "SELECT t.tid, t.name, v.name as vname, t.description, n.title, i.nid AS nid, h.parent AS ptid,
     NULL as children, NULL as parent
     FROM {taxonomy_term_data} t
     LEFT OUTER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
     LEFT OUTER JOIN {taxonomy_index} i ON t.tid = i.tid
     LEFT OUTER JOIN {node} n ON i.nid = n.nid AND n.type = :type
     LEFT OUTER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
-    WHERE t.vid = :vid";
+    WHERE t.vid = :vid";*/
   $query = "SELECT t.tid, t.name, v.name as vocab, t.description, h.parent AS ptid,
-    NULL as children, NULL as parent
+    NULL as children, NULL as staff
     FROM {taxonomy_term_data} t
     INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
     INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
@@ -536,11 +551,12 @@ function directory_items($vid = NULL) {
   if ($result) {
     foreach($result->fetchAll() as $record) {
       $record->children=array();
-      $record->parent = array();
+      $record->staff = array();
       $items[]=$record;
     }
   }
-
+  //directory entries are always leaves.
+  //but give people their own category.
 
   for($j=0; $j < count($items); $j++) {
 
@@ -562,8 +578,32 @@ function directory_items($vid = NULL) {
         }
       }
     }
+    //foreach item, see if there are content nodes attached and if so,
+    //load them into the staff array.
+    $result = db_query(
+      "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
+      array(':tid' => $items[$j]->tid));
+    if ($result) {
+      foreach(node_load_multiple($result->fetchCol()) as $node) {
+        $items[$j]->children[] = $node;
+      }
+    }
   }
   return $root;
+}
+function directory_sunburst() {
+  //some javascript here.
+  drupal_add_js('sites/all/libraries/d3/d3.js', 'file');
+  drupal_add_js('sites/all/modules/directory/js/sunburst.js', 'file');
+  drupal_add_css('sites/all/modules/directory/css/sunburst.css', 'file');
+  //drupal_set_title('hi');
+  return array(
+    '#theme' => 'container',
+    '#attributes' => array(
+      'id' => 'sunburst',
+    )
+  );
+
 }
 function directory_test() {
   //some javascript here.
@@ -578,4 +618,118 @@ function directory_test() {
     )
   );
 
+}
+/*
+ * directory_taxonomy_term_page($term)
+ * This overrides the default delivered term page. It is additive rather
+ * than subtractive. It adds any terms at the top that are children of the
+ * selected term to support navigation of hierarchical vocabularies.
+ */
+function directory_taxonomy_term_page($term) {
+  //lift the delivered code...overrides are marked below in context
+  // If there is a menu link to this term, the link becomes the last part of
+  // the active trail, and the link name becomes the page title. Thus, we must
+  // explicitly set the page title to be the term title.
+  drupal_set_title($term->name);
+
+  // Build breadcrumb based on the hierarchy of the term.
+  $current = (object) array(
+    'tid' => $term->tid,
+  );
+  // @todo This overrides any other possible breadcrumb and is a pure hard-coded
+  //   presumption. Make this behavior configurable per vocabulary or term.
+  $breadcrumb = array();
+  while ($parents = taxonomy_get_parents($current->tid)) {
+    $current = array_shift($parents);
+    $breadcrumb[] = l($current->name, 'taxonomy/term/' . $current->tid);
+  }
+  $breadcrumb[] = l(t('Home'), NULL);
+  $breadcrumb = array_reverse($breadcrumb);
+  drupal_set_breadcrumb($breadcrumb);
+  drupal_add_feed('taxonomy/term/' . $term->tid . '/feed', 'RSS - ' . $term->name);
+
+  // Set the term path as the canonical URL to prevent duplicate content.
+  $uri = entity_uri('taxonomy_term', $term);
+  drupal_add_html_head_link(array('rel' => 'canonical', 'href' => url($uri['path'], $uri['options'])), TRUE);
+  // Set the non-aliased path as a default shortlink.
+  drupal_add_html_head_link(array('rel' => 'shortlink', 'href' => url($uri['path'], array_merge($uri['options'], array('alias' => TRUE)))), TRUE);
+
+  // Normally we would call taxonomy_term_show() here, but for backwards
+  // compatibility in Drupal 7 we do not want to do that (it produces different
+  // data structures and HTML markup than what Drupal 7 released with). Calling
+  // taxonomy_term_view() directly provides essentially the same thing, but
+  // allows us to wrap the rendered term in our desired array structure.
+  $build['term_heading'] = array(
+    '#prefix' => '<div class="term-listing-heading">',
+    '#suffix' => '</div>',
+    'term' => taxonomy_term_view($term, 'full'),
+  );
+  //directory module additions.
+  $vocabulary = taxonomy_vocabulary_load($term->vid);
+  //show the immediate children of the term if there are any.
+  $children = taxonomy_get_tree($term->vid, $term->tid, 1);
+  if(!empty($children)) {
+    //children is an array of terms.
+    $child_links = array();
+    foreach($children as $child) {
+      $child_links[] = l($child->name, 'taxonomy/term/' . $child->tid);
+    }
+    $build['direct_children'] = array(
+      '#theme' => 'item_list',
+      '#title' => 'Child Terms',
+      '#type' => 'ul',
+      '#items' => $child_links,
+      '#prefix' => '<div id="child-terms-div">',
+      '#suffix' => '</div>',
+    );
+  }
+  //todo. the vocabulary variable should store the name of the field.
+  //It already does.
+  // Name convention is field_machine_name Then I can
+  //use it here to limit hte return set. as it is it returns all nodes. cant derive
+  //it from code because the same vocab could be used in more than one field instance.
+  //for this purpose don't re use vocabs.
+  if ($nids = taxonomy_select_nodes($term->tid, FALSE)) {
+    $nodes = node_load_multiple($nids);
+    $first = current($nodes);
+    if ($first->type == 'directory_profile') {
+      $nodes = directory_node_sort($nodes);
+    //dsm(directory_node_sort($nodes));
+      $build += node_view_multiple($nodes, 'contact_card');
+    }
+    else
+    {
+      $build += node_view_multiple($nodes);
+    }
+  }
+  else {
+    $build['no_content'] = array(
+      '#prefix' => '<p>',
+      '#markup' => t('There is currently no content classified with this term.'),
+      '#suffix' => '</p>',
+    );
+  }
+  return $build;
+}
+
+/**
+* Implements hook_entity_info_alter().
+*/
+function directory_entity_info_alter(&$entity_info) {
+  $entity_info['node']['view modes']['contact_card'] = array(
+    'label' => t('Contact Card'),
+    'custom settings' => TRUE,
+  );
+}
+function directory_node_sort($nodes) {
+  $sorted=array();
+  foreach ($nodes as $nid=>$node) {
+    $last_name[$nid] = $node->field_last_name[LANGUAGE_NONE][0]['value'];
+    $first_name[$nid] = $node->field_first_name[LANGUAGE_NONE][0]['value'];
+  }
+  array_multisort($last_name, SORT_ASC, $first_name, SORT_ASC, $nodes);
+  foreach($nodes as $node) {
+    $sorted[$node->nid] = $node;
+  }
+  return $sorted;
 }

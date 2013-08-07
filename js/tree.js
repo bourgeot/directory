@@ -26,7 +26,7 @@
         root.y0 = 0;
 
         function toggleAll(d) {
-          if (d.children) {
+          if (d.children ) {
             d.children.forEach(toggleAll);
             toggle(d);
           }
@@ -34,7 +34,7 @@
 
         // Initialize the display to show a few nodes.
         root.children.forEach(toggleAll);
-        //toggle(root.children[1]);
+        toggle(root.children[0]);
         //toggle(root.children[1].children[2]);
         //toggle(root.children[9]);
         //toggle(root.children[9].children[0]);
@@ -69,7 +69,11 @@
             .attr("x", function(d) { return d.children || d._children ? -10 : 10; })
             .attr("dy", ".35em")
             .attr("text-anchor", function(d) { return d.children || d._children ? "end" : "start"; })
-            .text(function(d) { return d.name; })
+            .text(function(d) {
+              var value;
+              if (d.title) { value = d.title; }
+              else if (d.name) { value = d.name; }
+              return value; })
             .style("fill-opacity", 1e-6);
 
         // Transition nodes to their new position.
