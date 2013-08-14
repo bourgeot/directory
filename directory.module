@@ -53,13 +53,14 @@ function directory_node_presave($node) {
 function create_new_ids($include_ldap = NULL) {
   //find new users or people who don't have taxonomy terms yet.
   $vid = variable_get('directory_ids_vocabulary', 0);
+  $desc = '';
   $tids = array();
   if ($vid>0) {
     $query = 'SELECT u.name FROM {users} u' .
       ' LEFT JOIN {taxonomy_term_data} t ON u.name = t.name' .
       ' WHERE t.name IS NULL AND u.status = 1';
     $result = db_query($query)->fetchAll();
-    dsm($result);
+    //dsm($result);
     foreach($result as $record) {
       //$record->name is available
       $new_term = array(
@@ -116,10 +117,10 @@ function directory_query_ldap($depts = array()) {
     'employeeBldgName'=> 'field_ua_locations',
     'employeeBldgNum'=> 'field_ua_locations_desc',
     //dept
-    'employeePrimaryDeptName'=> 'field_department',
+    'employeePrimaryDeptName'=> 'field_ua_organizations',
     //affiliation
     'eduPersonPrimaryAffiliation'=> 'field_ua_affiliations',
-    'uid' => 'field_directory_id',
+    'uid' => 'field_directory_ids',
   );
   $attrs = array_keys($field_map);
 
@@ -156,35 +157,17 @@ function directory_query_ldap($depts = array()) {
   ldap_close($ldap);
   return $result;
 }
-/*
- * I DON'T THINK THIS FUNCTION IS BEING USED
 
-function directory_create_profile_nodes() {
-  //conjure what departments to create nodes for
-  //for each department, fetch the ldap entries
-  //create nodes for that department
-  $division_tid = array_shift(array_keys(taxonomy_get_term_by_name('VP For Student Affairs')));
-  $division_array = directory_taxonomy_get_children_all($division_tid);
-  foreach($division_array as $dept_term) {
-    //$entries = directory_query_ldap(array($dept_term->description));
-    //dsm($entries);
-    directory_create_dept_profile_nodes($dept_term->description);
-  }
-} */
-/*
- * directory_query_dept_profile_nodes
- * USES university department number (like 8107 for SASG).
- */
 
 function directory_create_dept_profile_nodes($dept_num, $override = FALSE) {
     $entries = directory_query_ldap(array($dept_num));
     //dsm($entries);
     foreach ($entries as $entry) {
       //only create nodes for rows with uids
-      if(!empty($entry['field_directory_id'])) {
+      if(!empty($entry['field_directory_ids'])) {
         //see if we have run into it before
         $tq = db_query("SELECT tid FROM {taxonomy_term_data} WHERE name = :name",
-          array(':name' => $entry['field_directory_id'])) -> fetchField();
+          array(':name' => $entry['field_directory_ids'])) -> fetchField();
         if(!empty($tq)) {
           //we have. get the nid.
           $n = db_query("SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
@@ -347,20 +330,20 @@ function directory_create_profile_node($p) {
     $term_obj = array_shift($term_array);
     $node->field_alphabet[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
     //dept
-    $term_array = taxonomy_get_term_by_name($p['field_department'], 'ua_orgs');
+    $term_array = taxonomy_get_term_by_name($p['field_ua_organizations'], 'ua_organizations');
     $term_obj = array_shift($term_array);
-    $node->field_department[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
+    $node->field_ua_organizations[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
     //affiliation
     $term_array = taxonomy_get_term_by_name($p['field_ua_affiliations'], 'ua_affiliations');
     $term_obj = array_shift($term_array);
     $node->field_ua_affiliations[LANGUAGE_NONE][0]['tid'] = $term_obj->tid;
     //directory id
-    $term_array = taxonomy_get_term_by_name($p['field_directory_id'], 'directory_ids');
+    $term_array = taxonomy_get_term_by_name($p['field_directory_ids'], 'directory_ids');
     //dsm($term_array);
     if (empty($term_array)) {
       //add it
       $term_obj= directory_create_term('directory_ids',
-        $p['field_directory_id'],
+        $p['field_directory_ids'],
         $p['field_first_name'] . ' ' . $p['field_last_name']);
     }
     else {
@@ -392,14 +375,14 @@ function directory_reset() {
  */
 function directory_node_delete($node) {
     //remove the directory_id term associated with the profile node.
-    if($node->type == 'directory_profile' && isset($node->field_directory_id) ) {
-      taxonomy_term_delete($node->field_directory_id[LANGUAGE_NONE][0]['tid']);
+    if($node->type == 'directory_profile' && isset($node->field_directory_ids) ) {
+      taxonomy_term_delete($node->field_directory_ids[LANGUAGE_NONE][0]['tid']);
     }
 }
 function get_query_depts($dept='VP for Student Affairs', $output='array') {
   $terms=array();
-  $vid = variable_get('ua_orgs_vocabulary',0);
-  $base_terms = taxonomy_get_term_by_name($dept, 'ua_orgs');
+  $vid = variable_get('ua_organizations_vocabulary',0);
+  $base_terms = taxonomy_get_term_by_name($dept, 'ua_organizations');
   if(!empty($base_terms)) {
     //should be one entry
     //dsm($base_terms);
@@ -462,6 +445,16 @@ function directory_menu() {
     'directory/sunburst' => array(
       'title' => 'directory sunburst',
       'page callback' => 'directory_sunburst',
+      'access callback' => true,
+    ),
+    'directory/zoomtree' => array(
+      'title' => 'directory zoomtree',
+      'page callback' => 'directory_zoomtree',
+      'access callback' => true,
+    ),
+    'directory/explore/%' => array(
+      'page callback' => 'directory_explore',
+      'page arguments' => array(2),
       'access callback' => true,
     ),
   );
@@ -530,7 +523,7 @@ function directory_force_diagram() {
 //so taxonomy_get_tree has depth as well.
 function directory_items($vid = NULL) {
   if (is_null($vid)) {
-     $vid = variable_get('ua_orgs_vocabulary');
+     $vid = variable_get('ua_organizations_vocabulary');
     }
   $items = array();
   /*$query = "SELECT t.tid, t.name, v.name as vname, t.description, n.title, i.nid AS nid, h.parent AS ptid,
@@ -593,7 +586,7 @@ function directory_items($vid = NULL) {
 }
 function directory_sunburst() {
   //some javascript here.
-  drupal_add_js('sites/all/libraries/d3/d3.js', 'file');
+  drupal_add_js('sites/all/libraries/d3.v3/d3.v3.min.js', 'file');
   drupal_add_js('sites/all/modules/directory/js/sunburst.js', 'file');
   drupal_add_css('sites/all/modules/directory/css/sunburst.css', 'file');
   //drupal_set_title('hi');
@@ -605,9 +598,24 @@ function directory_sunburst() {
   );
 
 }
+function directory_zoomtree() {
+  //some javascript here.
+  drupal_add_js('sites/all/libraries/d3.v3/d3.v3.min.js', 'file');
+  drupal_add_js('sites/all/modules/directory/js/zoomtree.js', 'file');
+  drupal_add_css('sites/all/modules/directory/css/zoomtree.css', 'file');
+  //drupal_set_title('hi');
+  return array(
+    '#theme' => 'container',
+    '#attributes' => array(
+      'id' => 'zoomtree',
+    )
+  );
+}
+
+
 function directory_test() {
   //some javascript here.
-  drupal_add_js('sites/all/libraries/d3/d3.js', 'file');
+  drupal_add_js('sites/all/libraries/d3.v3/d3.v3.min.js', 'file');
   drupal_add_js('sites/all/modules/directory/js/tree.js', 'file');
   drupal_add_css('sites/all/modules/directory/css/tree.css', 'file');
   //drupal_set_title('hi');
@@ -732,4 +740,25 @@ function directory_node_sort($nodes) {
     $sorted[$node->nid] = $node;
   }
   return $sorted;
+}
+function directory_explore($arg = NULL) {
+  switch ($arg) {
+    case 'zoompartition':
+      drupal_set_title('Zoomable Partitions');
+    break;
+    case 'zoomtree':
+    default:
+    $arg = 'zoomtree';
+  }
+
+  drupal_add_js('sites/all/libraries/d3.v3/d3.v3.min.js', 'file');
+  drupal_add_js('sites/all/modules/directory/js/' . $arg . '.js', 'file');
+  drupal_add_css('sites/all/modules/directory/css/' . $arg . '.css', 'file');
+  //drupal_set_title('hi');
+  return array(
+    '#theme' => 'container',
+    '#attributes' => array(
+      'id' => $arg,
+    )
+  );
 }

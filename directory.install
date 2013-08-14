@@ -1,10 +1,10 @@
 <?php
 
-
-/*http://git-scm.com/book/ch2-5.html
+/*
  * Implements hook_enable
  */
 function directory_enable() {
+  require_once 'directory.inc';
   $t = get_t();
   //create some vocabularies
   $vocabs = array(
@@ -14,6 +14,7 @@ function directory_enable() {
       'description' => 'Known accounts and individuals',
       'hierarchy' => 1, //flat
       'module' => 'directory',
+      'field_label' => 'Directory ID',
     ),
     'ua_locations' => array(
       'name' => 'UA Locations',
@@ -22,14 +23,15 @@ function directory_enable() {
       'hierarchy' => 1,
       'module' => 'directory',
       //'weight' => 1,
+      'field_label' => 'UA Location',
     ),
-    'ua_orgs' => array(
+    'ua_organizations' => array(
       'name' => 'UA Organizations',
-      'machine_name' => 'ua_orgs',
+      'machine_name' => 'ua_organizations',
       'description' => 'Organizations in the UA HR system',
       'hierarchy' => 1,
       'module' => 'directory',
-      //'weight' => 3,
+      'field_label' => 'UA Department',
     ),
     'ua_affiliations' => array(
       'name' => 'UA Affiliations',
@@ -37,7 +39,7 @@ function directory_enable() {
       'description' => 'Ways that people are affiliated with the University of Arizona',
       'hierarchy' => 1,
       'module' => 'directory',
-      //'weight' => 2,
+      'field_label' => 'UA Affiliation',
     ),
     'sa_interests' => array(
       'name' => 'SA Interests',
@@ -46,6 +48,7 @@ function directory_enable() {
       'hierarchy' => 1,
       'module' => 'directory',
       //'weight' => 2,
+      'field_label' => 'SA Interests',
     ),
     'alphabet' => array(
       'name' => 'Alphabet',
@@ -54,6 +57,7 @@ function directory_enable() {
       'hierarchy' => 0, //flat
       'module' => 'directory',
       //'weight' => 3,
+      'field_label' => 'Index',
     ),
     /*'months' => array(
       'name' => 'Months',
@@ -79,7 +83,8 @@ function directory_enable() {
         'field_name' => 'field_' . $vocab['machine_name'],
         'type' => 'taxonomy_term_reference',
         'cardinality' => -1,
-        'label' => $vocab['name'],
+        //'label' => $vocab['name'],
+
         'settings' => array(
           'allowed_values' => array(
             array(
@@ -97,6 +102,7 @@ function directory_enable() {
         'field_name' => $field['field_name'],
         'entity_type' => 'node',
         'bundle' => 'directory_profile',
+        'label' => $vocab['field_label'],
       );
       field_create_instance($instance);
       drupal_set_message('Field Instance ' . $instance['field_name'] . ' created.');
@@ -137,9 +143,10 @@ function directory_enable() {
  * Implements hook_disable
  */
 function directory_disable() {
+  require_once 'directory.inc';
   $vocabs = array(
     'ua_locations',
-    'ua_orgs',
+    'ua_organizations',
     'directory_ids',
     'ua_affiliations',
     'sa_interests',
@@ -172,230 +179,7 @@ function directory_disable() {
   //tidy up
   field_purge_batch(1000);
 }
-function directory_loader($vocabulary_name) {
-  $vid = variable_get($vocabulary_name . '_vocabulary', 0);
-  if ($vid == 0) {
-      return FALSE;
-  }
-  else {
-    $count = 0;
-    switch ($vocabulary_name) {
-      case 'ua_orgs':
-        $orgs = _fetch_ua_orgs();
-        //result has a bunch of objects in it. Transform the data to an array where each
-        //entry is indexed by its dept id and is itself an array.
-        if(!empty($orgs)) {
-          foreach($orgs as $org) {
-            $orgs[$org['org_id']]['tid'] = _create_term($vocabulary_name, $org['dept_name'], $org['org_id'], $count +1);
-            $count++;
-            //drupal_set_message( $org['tid'] . 'created');
-    //$orgs[$org['org_id']]['tid'] = $zans;
-          }
-          //now build structure
-          reset($orgs);
-    //dsm($orgs);
-    $term_array = taxonomy_get_tree($vid, 0);
-          foreach($term_array as $term) {
-    $parent_set = array();
-    $term_org = $orgs[$term->description];
-    $parent_org = $orgs[$term_org['org_parent']];
-    $ptid = $parent_org['tid'];
-    if ($term->tid == $ptid) {
-      $ptid = 0;
-    }
-    $term->parent = $ptid;
-    taxonomy_term_save($term);
 
-            //drupal_set_message( 'using ' . $org['tid']);
-/*            if($orgs[$term->description]['org_parent_name'] <> '') {
-              drupal_set_message('with ' . $term->tid . ' looking for ' . $orgs[$term->description]['org_parent_name'] );
-              //$parent_array = taxonomy_get_term_by_name($orgs[$term->description]['org_parent_name']);
-    $parent_term = taxonomy_term_load($orgs[$term->description][
-              if(count($parent_array) > 0) {
-                foreach ($parent_array as $pterm) {
-                  $parent_set[] = $pterm->tid;
-                }
-                $term->parent = $parent_set;
-                taxonomy_term_save($term);
-              }
-              //drupal_set_message('made it past term create loop. orgs has ' . count($orgs) . ' terms.');            }
-            }
-*/
-          }
-        }
-      break;
-      case 'ua_locations':
-      break;
-      case 'ua_affiliations':
-        $set = array(
-          'student',
-          'admit',
-          'employee',
-          'studentworker',
-          'gradasst',
-          'faculty',
-          'staff',
-          'affiliate',
-          'dcc',
-          'retiree',
-          'member',
-          'former-student',
-          'former-employee',
-          'former-studentworker',
-          'former-gradasst',
-          'former-faculty',
-          'former-staff',
-          'former-affiliate',
-          'former-dcc',
-          'former-member',
-        );
-        foreach($set as $letter) {
-          _create_term($vocabulary_name, $letter);
-          $count++;
-        }
-      break;
-      case 'alphabet':
-        $set =  array(
-          'A',
-          'B',
-          'C',
-          'D',
-          'E',
-          'F',
-          'G',
-          'H',
-          'I',
-          'J',
-          'K',
-          'L',
-          'M',
-          'N',
-          'O',
-          'P',
-          'Q',
-          'R',
-          'S',
-          'T',
-          'U',
-          'V',
-          'W',
-          'X',
-          'Y',
-          'Z',
-        );
-        foreach($set as $letter) {
-          _create_term($vocabulary_name, $letter);
-          $count++;
-        }
-      break;
-      case 'months':
-        $set =  array(
-          'January',
-          'February',
-          'March',
-          'April',
-          'May',
-          'June',
-          'July',
-          'August',
-          'September',
-          'October',
-          'November',
-          'December',
-        );
-        foreach($set as $letter) {
-          _create_term($vocabulary_name, $letter, '', $count + 1);
-          $count++;
-        }
-      break;
-      case 'directory_ids':
-        //first, amass all the currently active users and see if they have
-        //terms associated with their names. If so, fine. If not, add them.
-        $count = count(create_new_ids());
-      break;
-    }
-    drupal_set_message('Added ' . $count . ' terms to ' . $vocabulary_name . '.', 'status');
-  }
-}
-/**
- * Create a single term and add to a specific vocabulary if not already present
- *  @vocab - the machine name of the vocabulary
- *  @term - the human readable name of the term to be added
- *
- *  @desc - the humna readable description of the term to be added (Optional)
- *  @weight - the weight of the term in the vocabulary list (Optional)
- */
-function _create_term($vocab_name, $term, $desc = '', $weight = 0, $add_parent = 0)  {
-  $added = NULL;
-  $added = taxonomy_get_term_by_name($term);
-  $vid = variable_get($vocab_name . '_vocabulary', 0);
-  if ($added == '' || $added == NULL || $vid > 0)  {
-    $new_term = array(
-      'name' => $term,
-      'description' => $desc,
-      'parent' => array($add_parent),
-      'weight' => $weight,
-      'vid' => $vid,
-    );
-    $term_obj = (object) $new_term;
-    taxonomy_term_save($term_obj);
-    //in case you want it.
-    if ($term_obj->tid > 0) {
-      return $term_obj->tid;
-    }
-    else { return 'trouble'; }
-  }
-}
-/*
- * use sia.uits interface to get the current ua org structure.
- */
-function _fetch_ua_orgs($url = '') {
-  if ($url == '') {
-    //get them all
-    $url = 'https://siaapps.uits.arizona.edu/home/orgs/ua_orgs/index.json';
-  }
-  $objs = array();
-  $f = file_get_contents($url);
-  if( $f !== FALSE ) {
-    $objs = json_decode($f);
-    //
-    $o = array();
-  $needOne = true;
-    do {
-      $obj = array_pop($objs);
-      /* I am going to rebuild the hierarchy to flatten out the object structure a bit.
-       * obj.UaOrg, obj.ParentUAOrg, and obj.ChildUAOrg all have internal structure.
-  * Child Ua Org is a list of objects that have ids.
-       * Rather than step through all of it I am going to rely on the fact that
-       * there is a single parent and multiple children.
-       * If an object has no children (leaf node) then build it.
-       * The remaining nodes are intermediates.
-       * Sort the leaves by parent id and build the parent.
-       * Then look that id up in 'data' and get its parent.
-       * First build the flat terms and ignore internal structure, but
-       * Note it. I wrote this earlier in javascript so that's what's below.
-       * var element = new orgNode(obj.UaOrg.id, obj.UaOrg.name,
-       * obj.UaOrg.parent_id, obj.UaOrg.parent_name);
-       */
-       //create the term and reference it.
-      if ($obj->UaOrg->finOnly != 1 || $obj->UaOrg->hr_code != '') {
-        $o[$obj->UaOrg->hr_code] = array(
-          'org_id' => $obj->UaOrg->hr_code,
-          'dept_name' => $obj->UaOrg->hr_name,
-          'org_parent' => $obj->UaOrg->hr_parent_code,
-          'org_parent_name' => $obj->UaOrg->hr_parent_name,
-          'tid' => 0,
-        );
-      }
-    } while (count($objs) > 0);
-
-
-  return $o;
-  }
-  else {
-    return FALSE;
-  }
-}
 function directory_field_defs() {
   return array(
     'first_name' => array(
@@ -425,11 +209,20 @@ function directory_field_defs() {
         'max_length' => 255,
       ),
     ),
-    'department' => array(
-      'field_name' => 'field_department',
+    'ua_email' => array(
+      'field_name' => 'field_ua_email',
       'type' => 'text',
       'cardinality' => 1,
-      'label' => 'Department',
+      'label' => 'UA Email',
+      'settings' => array(
+        'max_length' => 255,
+      ),
+    ),
+    'birthday' => array(
+      'field_name' => 'field_birthday',
+      'type' => 'text',
+      'cardinality' => 1,
+      'label' => 'Birthday',
       'settings' => array(
         'max_length' => 255,
       ),
@@ -440,7 +233,7 @@ function directory_field_defs() {
       'cardinality' => 1,
       'label' => 'Primary Phone',
       'settings' => array(
-        'max_length' => 10,
+        'max_length' => 255,
       ),
     ),
   );
@@ -465,11 +258,17 @@ function directory_field_instances() {
       'bundle' => 'directory_profile',
       'label' => 'Primary Title',
     ),
-    'department' => array(
-      'field_name' => 'field_department',
+    'ua_email' => array(
+      'field_name' => 'field_ua_email',
       'entity_type' => 'node',
       'bundle' => 'directory_profile',
-      'label' => 'Department',
+      'label' => 'UA Email',
+    ),
+    'ua_email' => array(
+      'field_name' => 'field_birthday',
+      'entity_type' => 'node',
+      'bundle' => 'directory_profile',
+      'label' => 'Birthday',
     ),
     'primary_phone' => array(
       'field_name' => 'field_primary_phone',

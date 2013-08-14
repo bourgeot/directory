@@ -1,17 +1,17 @@
 (function ($) {
   Drupal.behaviors.tree = {
     attach: function(context, settings) {
-      var m = [20, 120, 20, 120],
-          w = 1280 - m[1] - m[3],
-          h = 800 - m[0] - m[2],
+      var m = [20, 20, 20, 20],
+          w = 600 - m[1] - m[3],
+          h = 1280 - m[0] - m[2],
           i = 0,
           root;
 
       var tree = d3.layout.tree()
-          .size([h, w]);
+          .size([w, h]);
 
       var diagonal = d3.svg.diagonal()
-          .projection(function(d) { return [d.y, d.x]; });
+          .projection(function(d) { return [d.x, d.y]; });
 
       var vis = d3.select("#tree").append("svg:svg")
           .attr("width", w + m[1] + m[3])
@@ -20,7 +20,7 @@
           .attr("transform", "translate(" + m[3] + "," + m[0] + ")");
 
 
-      d3.json("/directory/json", function(json) {
+      d3.json("/survey-info/directory/json", function(json) {
         root = json;
         root.x0 = h / 2;
         root.y0 = 0;
@@ -58,7 +58,7 @@
         // Enter any new nodes at the parent's previous position.
         var nodeEnter = node.enter().append("svg:g")
             .attr("class", "node")
-            .attr("transform", function(d) { return "translate(" + source.y0 + "," + source.x0 + ")"; })
+            .attr("transform", function(d) { return "translate(" + source.x0 + "," + source.y0 + ")"; })
             .on("click", function(d) { toggle(d); update(d); });
 
         nodeEnter.append("svg:circle")
@@ -79,7 +79,7 @@
         // Transition nodes to their new position.
         var nodeUpdate = node.transition()
             .duration(duration)
-            .attr("transform", function(d) { return "translate(" + d.y + "," + d.x + ")"; });
+            .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
 
         nodeUpdate.select("circle")
             .attr("r", 4.5)
@@ -91,7 +91,7 @@
         // Transition exiting nodes to the parent's new position.
         var nodeExit = node.exit().transition()
             .duration(duration)
-            .attr("transform", function(d) { return "translate(" + source.y + "," + source.x + ")"; })
+            .attr("transform", function(d) { return "translate(" + source.x + "," + source.y + ")"; })
             .remove();
 
         nodeExit.select("circle")
