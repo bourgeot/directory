@@ -432,8 +432,9 @@ function directory_menu() {
       'type' => MENU_CALLBACK,
     ),
     'directory/json' =>array(
-      'title' => 'UA Organizations',
+      //'title' => 'UA Organizations',
       'page callback' => 'directory_items',
+      //'page arguments' => array(2),
       'access callback' => true,
       'delivery callback' => 'drupal_json_output',
     ),
@@ -452,9 +453,9 @@ function directory_menu() {
       'page callback' => 'directory_zoomtree',
       'access callback' => true,
     ),
-    'directory/explore/%' => array(
+    'directory/explore' => array(
       'page callback' => 'directory_explore',
-      'page arguments' => array(2),
+      //'page arguments' => array(2),
       'access callback' => true,
     ),
   );
@@ -518,41 +519,183 @@ function directory_force_diagram() {
   );
 
 }
-
+function directory_item_size($id, $type = 'taxonomy_term') {
+  $size = 0;
+  switch ($type) {
+    case 'vocabulary':
+      $result = db_query("SELECT tid FROM {taxonomy_term_hierarchy} h
+        INNER JOIN {taxonomy_term_data} t
+        ON h.tid = t.tid
+        WHERE h.parent = 0 AND t.vid = :vid", array(":vid" => $id));
+      $size += $result->rowCount();
+    break;
+    default:
+      //child count
+      $result = db_query("SELECT tid FROM {taxonomy_term_hierarchy} h
+      WHERE h.parent = :ptid", array(':ptid' => $id));
+      $size += $result->rowCount();
+      //content count
+      $result = db_query("SELECT nid FROM {taxonomy_index} i
+      WHERE i.tid = :tid", array(':id' => $tid));
+      $size += $result->rowCount();
+  }
+  if($size > 0) {
+    return $size;
+  }
+  else {
+    return 1;
+  }
+}
 //drupal stores parent. d3 wants children.
 //so taxonomy_get_tree has depth as well.
-function directory_items($vid = NULL) {
+function directory_fetch_items($vid = NULL, $tid = NULL) {
+  //fetch the vocabulary and the zero-depth terms
+
+}
+function directory_items($vid = NULL, $tid = NULL) {
   if (is_null($vid)) {
-     $vid = variable_get('ua_organizations_vocabulary');
-    }
-  $items = array();
-  /*$query = "SELECT t.tid, t.name, v.name as vname, t.description, n.title, i.nid AS nid, h.parent AS ptid,
-    NULL as children, NULL as parent
-    FROM {taxonomy_term_data} t
-    LEFT OUTER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
-    LEFT OUTER JOIN {taxonomy_index} i ON t.tid = i.tid
-    LEFT OUTER JOIN {node} n ON i.nid = n.nid AND n.type = :type
-    LEFT OUTER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
-    WHERE t.vid = :vid";*/
-  $query = "SELECT t.tid, t.name, v.name as vocab, t.description, h.parent AS ptid,
-    NULL as children, NULL as staff
-    FROM {taxonomy_term_data} t
-    INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
-    INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
-    WHERE t.vid = :vid";
-  $result = db_query($query, array(':vid' => $vid));
-  if ($result) {
-    foreach($result->fetchAll() as $record) {
-      $record->children=array();
-      $record->staff = array();
-      $items[]=$record;
+     $vocabulary = taxonomy_vocabulary_load(variable_get('ua_organizations_vocabulary'));
+  }
+  else {
+    $vocabulary = taxonomy_vocabulary_load($vid);
+    if(!$vocabulary) {
+      return false;
     }
   }
+  $items = array();
+  $root = new stdClass();
+  if (!is_null($tid)) {
+    $base = taxonomy_term_load($tid);
+    if (!$base) {
+      return false;
+    }
+    //define the root
+    $root->name = $base->name;
+    $root->children = array();
+    $root->staff = array();
+    $root->attributes = array(
+    'tid' => $base->tid,
+    'ptid' => $base->parent,
+    'hierarchy' => $vocabulary->hierarchy,    //$first->attributes['hierarchy'],
+    'vocabulary' =>$vocabulary->machine_name, //$first->attributes['vocabulary'],
+    'vid' => $vocabulary->vid,
+    'description' => $base->description,
+    );
+    //fetch any children
+    $query = "SELECT h1.tid as h1tid, h1t.name as h1name, h1t.description as h1desc,
+        h2.tid as h2tid, h2t.name as h2name, h2t.description as h2desc,
+        h3.tid as h3tid h3t.name as h3name, h3t.description as h3desc
+      FROM {taxonomy_term_hierarchy} h1
+        INNER JOIN {taxonomy_term_data} ht
+        ON h1.tid = ht.tid
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h2
+        ON h1.tid = h2.parent
+        INNER JOIN {taxonomy_term_data} h2t
+        ON h2.tid = h2t.tid
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h3
+        ON h2.tid = h3.parent
+        INNER JOIN {taxonomy_term_data} h3t
+        ON h3.tid = h3t.tid
+      WHERE h1.tid = :tid
+      ORDER BY h1.tid DESC, h2.tid DESC, h3.tid DESC";
+    $result = db_query($query, array(':tid' => $base->tid));
+    if($result->rowCount() == 0) {
+      //look to see if there are any content nodes associated with the term.
+    }
+    else {
+      $current_h1tid = 0;
+      $current_h2 = NULL;
+      $current_h3 = NULL;
+      foreach($result->fetchAllAssoc() as $row) {
+        //find the lowest attachment point.
+        if ($row['h1tid'] == $current_h1tid) {
+          //same
+          if($row['h2tid'] == $current_h2) {
+            //same
+            if(!is_null($row['h3tid'])) {
+              //make it
+            }
+          }
+          else {
+            //make it if it isn't null
+          }
+        }
+        else {
+          //make it
+          $attrs = array(
+            'tid' => $row['h1tid'],
+            'description' => $row['h1desc'],
+            'ptid' => $base->tid,
+            'vocabulary' => $vocabulary->machine_name,
+            'vid' => $vocabulary->vid,
+          );
+          $current_h1tid = $row['h1tid'];
+          $root->children[] = directory_create_item($row['h1name'], $attrs);
+        }
+      }
+
+        }
+      }
+    }*/
+  }
+  else {
+    //no specific term. fetch the complete vocabulary.
+    //define the root
+    $root->name = $vocabulary->name;            //$first->attributes['vocabulary'];
+    $root->children = array();
+    $root->staff = array();
+    $root->attributes = array(
+      'tid' => 0,
+      'ptid' => 0,
+      'hierarchy' => $vocabulary->hierarchy,    //$first->attributes['hierarchy'],
+      'vocabulary' =>$vocabulary->machine_name, //$first->attributes['vocabulary'],
+      'vid' => $vocabulary->vid,
+      'description' => $vocabulary->description,
+    );
+    $items[]=$root;
+    $query = "SELECT t.tid, t.name, t.description, h.parent AS ptid
+      FROM {taxonomy_term_data} t
+      INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+      INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
+      WHERE t.vid = :vid";
+    $result = db_query($query, array(':vid' => $vocabulary->vid));
+  }
+  if($result->rowCount() == 0) {
+    //return the vocabulary entry as a root object
+    return $root;
+  }
+  else {
+  foreach($result->fetchAll() as $record) {
+    $o=new stdClass;
+    $o->staff = array();
+    $o->children = array();
+    $o->attributes = array();
+          //$record->children=array();
+     // $record->staff = array();
+      //$record->attributes = array();
+      $o->name = $record->name;
+      $o->attributes['tid'] = $record->tid;
+      //$o->attributes['hierarchy']= $record->hierarchy;
+      $o->attributes['description'] = $record->description;
+      $o->attributes['ptid'] = $record->ptid;
+      $o->attributes['vocabulary']=$vocabulary->machine_name;
+      $o->attributes['vid'] = $vocabulary->vid;
+      //$items[]=$record;
+      $items[] = $o;
+  }
+  //}
   //directory entries are always leaves.
   //but give people their own category.
+  /*
+   * Need to know vocab hierarchy. 0 = flat, 1 = parents exist.
+   * For each supported vocab, need to know how to identify root.
+   * For flat: Root is vocab name, all terms are children of
+   * it.
+   * In the case where there is no single root term, root is vocab name.
+
+
 
   for($j=0; $j < count($items); $j++) {
-
     /*for each item, find its parent node and
     1)assign it to the parent attribute,
     and
@@ -560,29 +703,62 @@ function directory_items($vid = NULL) {
 
     Special: the root node UNAZ should have no parent.
     */
+    if ($items[$j]->attributes['description'] == 'UNAZ') {
+      $root = &$items[$j];
+    }
     for($i=0; $i < count($items); $i++) {
-      //if ( dataset[i].id == dataset[j].parentId ) {
-      if ( $items[$j]->description == 'UNAZ' ) {
-        $root = &$items[$j];
+    //if ( dataset[i].id == dataset[j].parentId ) {
+    //if ( $items[$j]->description == 'UNAZ' ) {
+
+    //else {
+      //if ( $items[$i]->tid == $items[$j]->ptid ) {
+      if ($items[$i]->attributes['tid'] == $items[$j]->attributes['ptid']
+        && $i != $j) {
+        $items[$i]->children[] = &$items[$j];
       }
-      else {
-        if ( $items[$i]->tid == $items[$j]->ptid ) {
-          $items[$i]->children[] = &$items[$j];
-        }
-      }
+    //}
     }
     //foreach item, see if there are content nodes attached and if so,
     //load them into the staff array.
+    //$result = db_query(
+    //  "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
+    //  array(':tid' => $items[$j]->tid));
     $result = db_query(
       "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
-      array(':tid' => $items[$j]->tid));
+      array(':tid' => $items[$j]->attributes['tid']));
     if ($result) {
+      $map = array();
       foreach(node_load_multiple($result->fetchCol()) as $node) {
-        $items[$j]->children[] = $node;
+        $items[$j]->staff[] = directory_node_data($node, $map);
       }
     }
   }
+  dsm($root);
   return $root;
+}
+function directory_create_item($name, $size = 1, $attributes = array()) {
+  $o = new stdClass;
+  $o->name = $name;
+  $o->size = $size;
+  $o->staff = array(); //to be removed.
+  $o->content = array(); //was staff
+  $o->children = array();
+  $o->attributes = $attributes;
+  return $o;
+}
+function directory_node_data($node, $map = array()) {
+  $o = new stdClass;
+  if(empty($map)) {
+    $o->name = $node->title;
+    $o->attributes = array('nid'=>$node->nid,);
+  }
+  else {
+  $o = clone $node;
+  }
+
+  $o->children = array();
+  $o->staff = array();
+  return $o;
 }
 function directory_sunburst() {
   //some javascript here.
@@ -703,11 +879,11 @@ function directory_taxonomy_term_page($term) {
     if ($first->type == 'directory_profile') {
       $nodes = directory_node_sort($nodes);
     //dsm(directory_node_sort($nodes));
-      $build += node_view_multiple($nodes, 'contact_card');
+      $build += node_view_multiple($nodes, 'teaser');
     }
     else
     {
-      $build += node_view_multiple($nodes);
+      $build += node_view_multiple($nodes, 'teaser');
     }
   }
   else {

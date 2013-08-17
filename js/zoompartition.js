@@ -19,17 +19,27 @@
       .attr("height", h);
 
     var partition = d3.layout.partition()
+      .children(function(d) {
+        if (d.children != undefined && d.staff != undefined) {
+          return d.children.concat(d.staff);
+        }
+        else {
+          return [];
+        }
+      })
       .value(function(d) {
-          //count the children and the staff leaf nodes.
-          //if these are undefined return 1
-          //console.log(d);
-          if (d.children != undefined && d.staff != undefined) {
-         return d.children.length + d.staff.length;
-       }
-         else {
-           return 1;
+        //count the children and the staff leaf nodes.
+        //if these are undefined return 1
+        //console.log(d);
+        //if(d.children != undefined && d.staff != undefined) {
+          if (d.children.length > 0  || d.staff.length > 0) {
+            return d.children.length + d.staff.length;
           }
-          });
+        //}
+        else {
+          return 1;
+        }
+      });
 
     d3.json("/survey-info/directory/json", function(root) {
     var g = vis.selectAll("g")
@@ -44,7 +54,8 @@
     g.append("svg:rect")
         .attr("width", root.dy * kx)
         .attr("height", function(d) { return d.dx * ky; })
-        .attr("class", function(d) { return d.children ? "parent" : "child"; });
+        .attr("class", function(d) {
+          return d.children ? "parent" : "child"; });
 
     g.append("svg:text")
         .attr("transform", transform)
@@ -56,7 +67,7 @@
         .on("click", function() { click(root); })
 
     function click(d) {
-      if (!d.children) return;
+      if (!d.children && !d.staff) return;
 
       kx = (d.y ? w - 40 : w) / (1 - d.y);
       ky = h / d.dx;

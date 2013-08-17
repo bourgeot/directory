@@ -1,0 +1,19 @@
+stuff    $query = "SELECT t.tid as tid, t.name as rname, t.description as rdesc,
+        h1.tid as h1tid, h1t.name as h1name, h1t.description as h1desc,
+        h2.tid as h2tid, h2t.name as h2name, h2t.description as h2desc,
+        h3.tid as h3tid h3t.name as h3name, h3t.description as h3desc
+      FROM {taxonomy_term_data} t
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h1
+        ON t.tid = h1.parent
+        INNER JOIN {taxonomy_term_data} ht
+        ON h1.tid = ht.tid
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h2
+        ON h1.tid = h2.parent
+        INNER JOIN {taxonomy_term_data} h2t
+        ON h2.tid = h2t.tid
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h3
+        ON h2.tid = h3.parent
+        INNER JOIN {taxonomy_term_data} h3t
+        ON h3.tid = h3t.tid
+      WHERE t.tid = :tid
+      ORDER BY h1.tid DESC, h2.tid DESC, h3.tid DESC";
