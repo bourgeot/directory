@@ -1,5 +1,6 @@
 <?php
-
+//drupal hook implementations.
+//Bourgeois. Summer 2013.
 /*
  * Implements hook_node_info
  */
@@ -28,7 +29,9 @@ function directory_form_alter(&$form, &$form_state, $form_id) {
       drupal_set_message('here in alter');
     }
 }
-
+/*
+ * Implements hook_node_presave
+ */
 function directory_node_presave($node) {
   if($node->type == 'directory_profile') {
   //The title is <name>
@@ -157,7 +160,15 @@ function directory_query_ldap($depts = array()) {
   ldap_close($ldap);
   return $result;
 }
-
+function directory_make_division() {
+  $terms = taxonomy_get_tree(variable_get('ua_organizations_vocabulary'), 6279);
+  $items = array();
+  foreach($terms as $term) {
+    directory_create_dept_profile_nodes($term->description, TRUE);
+  }
+  drupal_set_message('Done');
+  return;
+}
 
 function directory_create_dept_profile_nodes($dept_num, $override = FALSE) {
     $entries = directory_query_ldap(array($dept_num));
@@ -432,9 +443,8 @@ function directory_menu() {
       'type' => MENU_CALLBACK,
     ),
     'directory/json' =>array(
-      //'title' => 'UA Organizations',
-      'page callback' => 'directory_items',
-      //'page arguments' => array(2),
+//      'page callback' => 'directory_items',
+      'page callback' => 'directory_fetch_items',
       'access callback' => true,
       'delivery callback' => 'drupal_json_output',
     ),
@@ -519,20 +529,20 @@ function directory_force_diagram() {
   );
 
 }
-function directory_item_size($id, $type = 'taxonomy_term') {
+function directory_item_size($item_id, $type = 'taxonomy_term') {
   $size = 0;
   switch ($type) {
     case 'vocabulary':
       $result = db_query("SELECT tid FROM {taxonomy_term_hierarchy} h
         INNER JOIN {taxonomy_term_data} t
         ON h.tid = t.tid
-        WHERE h.parent = 0 AND t.vid = :vid", array(":vid" => $id));
+        WHERE h.parent = 0 AND t.vid = :vid", array(":vid" => $item_id));
       $size += $result->rowCount();
     break;
     default:
       //child count
       $result = db_query("SELECT tid FROM {taxonomy_term_hierarchy} h
-      WHERE h.parent = :ptid", array(':ptid' => $id));
+      WHERE h.parent = :ptid", array(':ptid' => $item_id));
       $size += $result->rowCount();
       //content count
       $result = db_query("SELECT nid FROM {taxonomy_index} i
@@ -546,197 +556,7 @@ function directory_item_size($id, $type = 'taxonomy_term') {
     return 1;
   }
 }
-//drupal stores parent. d3 wants children.
-//so taxonomy_get_tree has depth as well.
-function directory_fetch_items($vid = NULL, $tid = NULL) {
-  //fetch the vocabulary and the zero-depth terms
-
-}
-function directory_items($vid = NULL, $tid = NULL) {
-  if (is_null($vid)) {
-     $vocabulary = taxonomy_vocabulary_load(variable_get('ua_organizations_vocabulary'));
-  }
-  else {
-    $vocabulary = taxonomy_vocabulary_load($vid);
-    if(!$vocabulary) {
-      return false;
-    }
-  }
-  $items = array();
-  $root = new stdClass();
-  if (!is_null($tid)) {
-    $base = taxonomy_term_load($tid);
-    if (!$base) {
-      return false;
-    }
-    //define the root
-    $root->name = $base->name;
-    $root->children = array();
-    $root->staff = array();
-    $root->attributes = array(
-    'tid' => $base->tid,
-    'ptid' => $base->parent,
-    'hierarchy' => $vocabulary->hierarchy,    //$first->attributes['hierarchy'],
-    'vocabulary' =>$vocabulary->machine_name, //$first->attributes['vocabulary'],
-    'vid' => $vocabulary->vid,
-    'description' => $base->description,
-    );
-    //fetch any children
-    $query = "SELECT h1.tid as h1tid, h1t.name as h1name, h1t.description as h1desc,
-        h2.tid as h2tid, h2t.name as h2name, h2t.description as h2desc,
-        h3.tid as h3tid h3t.name as h3name, h3t.description as h3desc
-      FROM {taxonomy_term_hierarchy} h1
-        INNER JOIN {taxonomy_term_data} ht
-        ON h1.tid = ht.tid
-      LEFT OUTER JOIN {taxonomy_term_hierarchy} h2
-        ON h1.tid = h2.parent
-        INNER JOIN {taxonomy_term_data} h2t
-        ON h2.tid = h2t.tid
-      LEFT OUTER JOIN {taxonomy_term_hierarchy} h3
-        ON h2.tid = h3.parent
-        INNER JOIN {taxonomy_term_data} h3t
-        ON h3.tid = h3t.tid
-      WHERE h1.tid = :tid
-      ORDER BY h1.tid DESC, h2.tid DESC, h3.tid DESC";
-    $result = db_query($query, array(':tid' => $base->tid));
-    if($result->rowCount() == 0) {
-      //look to see if there are any content nodes associated with the term.
-    }
-    else {
-      $current_h1tid = 0;
-      $current_h2 = NULL;
-      $current_h3 = NULL;
-      foreach($result->fetchAllAssoc() as $row) {
-        //find the lowest attachment point.
-        if ($row['h1tid'] == $current_h1tid) {
-          //same
-          if($row['h2tid'] == $current_h2) {
-            //same
-            if(!is_null($row['h3tid'])) {
-              //make it
-            }
-          }
-          else {
-            //make it if it isn't null
-          }
-        }
-        else {
-          //make it
-          $attrs = array(
-            'tid' => $row['h1tid'],
-            'description' => $row['h1desc'],
-            'ptid' => $base->tid,
-            'vocabulary' => $vocabulary->machine_name,
-            'vid' => $vocabulary->vid,
-          );
-          $current_h1tid = $row['h1tid'];
-          $root->children[] = directory_create_item($row['h1name'], $attrs);
-        }
-      }
-
-        }
-      }
-    }*/
-  }
-  else {
-    //no specific term. fetch the complete vocabulary.
-    //define the root
-    $root->name = $vocabulary->name;            //$first->attributes['vocabulary'];
-    $root->children = array();
-    $root->staff = array();
-    $root->attributes = array(
-      'tid' => 0,
-      'ptid' => 0,
-      'hierarchy' => $vocabulary->hierarchy,    //$first->attributes['hierarchy'],
-      'vocabulary' =>$vocabulary->machine_name, //$first->attributes['vocabulary'],
-      'vid' => $vocabulary->vid,
-      'description' => $vocabulary->description,
-    );
-    $items[]=$root;
-    $query = "SELECT t.tid, t.name, t.description, h.parent AS ptid
-      FROM {taxonomy_term_data} t
-      INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
-      INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
-      WHERE t.vid = :vid";
-    $result = db_query($query, array(':vid' => $vocabulary->vid));
-  }
-  if($result->rowCount() == 0) {
-    //return the vocabulary entry as a root object
-    return $root;
-  }
-  else {
-  foreach($result->fetchAll() as $record) {
-    $o=new stdClass;
-    $o->staff = array();
-    $o->children = array();
-    $o->attributes = array();
-          //$record->children=array();
-     // $record->staff = array();
-      //$record->attributes = array();
-      $o->name = $record->name;
-      $o->attributes['tid'] = $record->tid;
-      //$o->attributes['hierarchy']= $record->hierarchy;
-      $o->attributes['description'] = $record->description;
-      $o->attributes['ptid'] = $record->ptid;
-      $o->attributes['vocabulary']=$vocabulary->machine_name;
-      $o->attributes['vid'] = $vocabulary->vid;
-      //$items[]=$record;
-      $items[] = $o;
-  }
-  //}
-  //directory entries are always leaves.
-  //but give people their own category.
-  /*
-   * Need to know vocab hierarchy. 0 = flat, 1 = parents exist.
-   * For each supported vocab, need to know how to identify root.
-   * For flat: Root is vocab name, all terms are children of
-   * it.
-   * In the case where there is no single root term, root is vocab name.
-
-
-
-  for($j=0; $j < count($items); $j++) {
-    /*for each item, find its parent node and
-    1)assign it to the parent attribute,
-    and
-    2) push self to its parent's children attrribute.
-
-    Special: the root node UNAZ should have no parent.
-    */
-    if ($items[$j]->attributes['description'] == 'UNAZ') {
-      $root = &$items[$j];
-    }
-    for($i=0; $i < count($items); $i++) {
-    //if ( dataset[i].id == dataset[j].parentId ) {
-    //if ( $items[$j]->description == 'UNAZ' ) {
-
-    //else {
-      //if ( $items[$i]->tid == $items[$j]->ptid ) {
-      if ($items[$i]->attributes['tid'] == $items[$j]->attributes['ptid']
-        && $i != $j) {
-        $items[$i]->children[] = &$items[$j];
-      }
-    //}
-    }
-    //foreach item, see if there are content nodes attached and if so,
-    //load them into the staff array.
-    //$result = db_query(
-    //  "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
-    //  array(':tid' => $items[$j]->tid));
-    $result = db_query(
-      "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
-      array(':tid' => $items[$j]->attributes['tid']));
-    if ($result) {
-      $map = array();
-      foreach(node_load_multiple($result->fetchCol()) as $node) {
-        $items[$j]->staff[] = directory_node_data($node, $map);
-      }
-    }
-  }
-  dsm($root);
-  return $root;
-}
-function directory_create_item($name, $size = 1, $attributes = array()) {
+function directory_create_item($name, $attributes = array(), $size = 1 ) {
   $o = new stdClass;
   $o->name = $name;
   $o->size = $size;
@@ -757,9 +577,160 @@ function directory_node_data($node, $map = array()) {
   }
 
   $o->children = array();
-  $o->staff = array();
+  $o->size = 1;
+  $o->staff = array(); //don't use
+  $o->content = array(); //do use.
   return $o;
 }
+//drupal stores parent. d3 wants children.
+//so taxonomy_get_tree has depth as well.
+function directory_fetch_items($vid = NULL, $tid = NULL) {
+  //fetch the vocabulary and the zero-depth terms
+  /* The vocabulary is the spine. In drupal the vocabulary id is the main partition on the
+   * tags themselves but they can be accessed independently of vocabulary (you don't have to know the vid
+   * to get the term. And the tree is specified only as chain elements linking tid to tid.
+   * So when you walk the tree there is no way to know how deep you have to go before you start. It isn't marked
+   * anywhere. For whatever reason I don't want to do recursion. I guess I just don't trust it. So what this will do is get
+   * the immediate offspring of a term tid if there are any I(anything in taxonomy_term_hierarchy where tid is the parent).
+   * In case the tid's parent is zero, it doesn't have a parent. But the vocabulary isn't itself a term node. So for vocabularies
+   * where v->hierarchy = 0 (flat), this will 'fake' a term node for the vocabulary (name and description). For cases where the
+   * hierarchy > 1, it wil do the same just in case there is no single root node for the tree. In such an event, which is only
+   * discoverable (I think), the faked term node will be the root node. Otherwise it will get overwritten with the real root term.
+  */
+  //either argument can be null. they function independently and do different things.
+  //first check vid.
+  $base = false;
+  $items = array();
+  $root = new stdClass();
+  if (is_null($vid) && is_null($tid)) {
+    return false;
+  }
+  else if (!is_null($tid)) {
+    //driver. Look it up. By (my) convention, if the tid is available and valid then
+    //assume we are looking for the immediate children and node content. The exception to this is to use the keyword
+    //'all' or the number 0 which will return all of the instances (the whole vocabulary)
+    if (is_numeric($tid) && $tid > 0) {
+      $query = "SELECT t.tid, v.vid, v.name as vname, v.description as vdesc,
+          v.machine_name, v.hierarchy, t.name, t.description, h.parent AS ptid
+        FROM {taxonomy_term_data} t
+        INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+        INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
+        WHERE t.tid = :tid";
+      $result = db_query($query, array(':tid' => $tid));
+      if($result->rowCount() > 0) {
+        //tid is valid.
+        //should just be one row.
+        $base = reset($result->fetchAll());
+        //define the root
+        $root->name = $base->name;
+        $root->children = array();
+        $root->content = array();
+        $root->size = 1;
+        $root->attributes = array(
+          'tid' => $base->tid,
+          'ptid' => $base->ptid,
+          'hierarchy' => $base->hierarchy,
+          'vocabulary' =>$base->machine_name,
+          'vid' => $base->vid,
+          'description' => $base->description,
+        );
+        //fetch the immediate children and then the content.
+        $query = "SELECT h.tid, t.name, t.description
+          FROM {taxonomy_term_hierarchy} h
+          INNER JOIN {taxonomy_term_data} t ON h.tid = t.tid
+          WHERE h.parent = :tid";
+        $result = db_query($query, array(':tid' => $tid));
+        if($result->rowCount() > 0) {
+          //update the size
+          $root->size = $result->rowCount();
+          foreach($result->fetchAll() as $record) {
+            //define child
+            $attrs = array(
+              'tid' => $record->tid,
+              'description' => $record->description,
+              'ptid' => $tid,
+              'hierarchy' => $base->hierarchy,
+              'vocabulary' => $base->machine_name,
+              'vid' => $base->vid,
+            );
+            $root->children[] = directory_create_item($record->name, $attrs);
+            //right now the children don't have any content beyond a reference.
+          }
+        }
+        //content
+        $query = "SELECT nid FROM {taxonomy_index} WHERE tid = :tid";
+        $result = db_query($query, array(':tid' => $tid));
+        if ($result->rowCount()> 0) {
+          $root->size += $result->rowCount();
+          $map = array();
+          foreach(node_load_multiple($result->fetchCol()) as $node) {
+            $root->content[] = directory_node_data($node, $map);
+          }
+        }
+      }
+    }
+  }
+  if (!$base && !is_null($vid)) {
+    //tid is not valid or it is null. check the vocab.
+    if(is_numeric($vid)) {
+      $base = taxonomy_vocabulary_load($vid);
+    }
+    else {
+      //mess with it.
+      $punc = array(" ", "-");
+      $base = taxonomy_vocabulary_machine_name_load(str_replace($punc, "_", $vid));
+    }
+    if (!$base) {
+      return false;
+    }
+    //define the root.
+    $root->name = $base->name;
+    $root->children = array();
+    $root->content = array();
+    $root->size = 1;
+    $root->attributes = array(
+      'tid' => 0,
+      'ptid' => 0,
+      'hierarchy' => $base->hierarchy,
+      'vocabulary' =>$base->machine_name,
+      'vid' => $base->vid,
+      'description' => $base->description,
+    );
+    //just in case there is a $tid and it is 'all' or 0
+    if (!is_null($tid) && ($tid == 0 || $tid == 'all')) {
+      $query = "SELECT t.tid, t.name, t.description, h.parent AS ptid
+      FROM {taxonomy_term_data} t
+      INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+      INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
+      WHERE t.vid = :vid";
+    }
+    else {
+    //fetch the immediate children. This is a 'fake' term anyway
+    //so there is no content associated with this.
+    $query = "SELECT t.tid, t.name, t.description, h.parent AS ptid
+      FROM {taxonomy_term_data} t
+      INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+      WHERE h.parent = 0 AND t.vid = :vid";
+    }
+    $result = db_query($query, array(':vid' => $base->vid));
+    if($result->rowCount() > 0) {
+      foreach($result->fetchAll() as $record) {
+        //define child
+        $attrs = array(
+          'tid' => $record->tid,
+          'description' => $record->description,
+          'ptid' => 0,
+          'hierarchy' => $base->hierarchy,
+          'vocabulary' => $base->machine_name,
+          'vid' => $base->vid,
+        );
+        $root->children[] = directory_create_item($record->name, $attrs);
+      }
+    }
+  }
+  return $root;
+}
+
 function directory_sunburst() {
   //some javascript here.
   drupal_add_js('sites/all/libraries/d3.v3/d3.v3.min.js', 'file');

@@ -17,3 +17,170 @@ stuff    $query = "SELECT t.tid as tid, t.name as rname, t.description as rdesc,
         ON h3.tid = h3t.tid
       WHERE t.tid = :tid
       ORDER BY h1.tid DESC, h2.tid DESC, h3.tid DESC";
+function directory_items($vid = NULL, $tid = NULL) {
+  if (is_null($vid)) {
+     $vocabulary = taxonomy_vocabulary_load(variable_get('ua_organizations_vocabulary'));
+  }
+  else {
+    $vocabulary = taxonomy_vocabulary_load($vid);
+    if(!$vocabulary) {
+      return false;
+    }
+  }
+  $items = array();
+  $query = "SELECT t.tid, t.name, t.description, h.parent AS ptid
+    FROM {taxonomy_term_data} t
+    INNER JOIN {taxonomy_term_hierarchy} h ON t.tid = h.tid
+    INNER JOIN {taxonomy_vocabulary} v ON t.vid = v.vid
+    WHERE t.vid = :vid";
+  if (!is_null($tid)) {
+    $query = "SELECT t.tid as tid, t.name as rname, t.description as rdesc,
+        h.tid as htid, ht.name as h1name, ht.description as h1desc, ht.vid as vid, v.name as vocabulary,
+        h2.tid as h2tid, h2t.name as h2name, h2t.description as h2desc,
+        h3.tid as h3tid h3t.name as h3name, h3t.description as h3desc
+      FROM {taxonomy_term_data} t
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h
+        ON t.tid = h.parent
+        INNER JOIN {taxonomy_term_data} ht
+        ON h.tid = ht.tid
+          INNER JOIN {taxonomy_vocabulary} v
+          ON ht.vid = v.vid
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h2
+        ON h.tid = h2.parent
+        INNER JOIN {taxonomy_term_data} h2t
+        ON h2.tid = h2t.tid
+      LEFT OUTER JOIN {taxonomy_term_hierarchy} h3
+        ON h2.tid = h3.parent
+        INNER JOIN {taxonomy_term_data} h3t
+        ON h3.tid = h3t.tid
+      WHERE t.tid = :tid
+      ORDER BY h.tid DESC, h2.tid DESC, h3.tid DESC";
+    $result = db_query($query, array(':tid' => $tid));
+    if($result->rowCount() == 0) {
+      return false;
+    }
+    else {
+      $i=0;
+      foreach($result->fetchAll() as $record) {
+        if ($i = 0) {
+          //assign the root
+          $root = new stdClass();
+          $root->name = $record->name;
+          $root->children = array();
+          $root->staff = array();
+          $root->attributes = array(
+            'tid' => 0,
+            'ptid' => 0,
+            'hierarchy' => $first->attributes['hierarchy'],
+            'vocabulary' =>$first->attributes['vocabulary'],
+            'vid' => $vid,
+            'description' => NULL,
+          );
+          $items[]=$root;
+        }
+      }
+    }
+  }
+  else {
+    $result = db_query($query, array(':vid' => $vocabulary->vid));
+  }
+  if($result->rowCount() == 0) {
+    return false;
+  }
+  //if ($result) {
+
+  foreach($result->fetchAll() as $record) {
+    $o=new stdClass;
+    $o->staff = array();
+    $o->children = array();
+    $o->attributes = array();
+          //$record->children=array();
+     // $record->staff = array();
+      //$record->attributes = array();
+      $o->name = $record->name;
+      $o->attributes['tid'] = $record->tid;
+      //$o->attributes['hierarchy']= $record->hierarchy;
+      $o->attributes['description'] = $record->description;
+      $o->attributes['ptid'] = $record->ptid;
+      $o->attributes['vocabulary']=$vocabulary->machine_name;
+      $o->attributes['vid'] = $vocabulary->vid;
+      //$items[]=$record;
+      $items[] = $o;
+    }
+  //}
+  //directory entries are always leaves.
+  //but give people their own category.
+  /*
+   * Need to know vocab hierarchy. 0 = flat, 1 = parents exist.
+   * For each supported vocab, need to know how to identify root.
+   * For flat: Root is vocab name, all terms are children of
+   * it.
+   * In the case where there is no single root term, root is vocab name.
+
+  $first = reset($items);
+
+  $root->tid = 0;
+  $root->ptid = 0;
+  $root->name = $first->vocab;
+  $root->vocab = $first->vocab;
+  $root->hierarchy = $first->hierarchy;
+  $root->description = $first->vocab;
+  $root->children = array();
+  $root->staff = array();
+  $attributes = array();   */
+  //$first = reset($items);
+  $root = new stdClass();
+  $root->name = $vocabulary->name;            //$first->attributes['vocabulary'];
+  $root->children = array();
+  $root->staff = array();
+  $root->attributes = array(
+    'tid' => 0,
+    'ptid' => 0,
+    'hierarchy' => $vocabulary->hierarchy,    //$first->attributes['hierarchy'],
+    'vocabulary' =>$vocabulary->machine_name, //$first->attributes['vocabulary'],
+    'vid' => $vocabulary->vid,
+    'description' => $vocabulary->description,
+  );
+  $items[]=$root;
+  for($j=0; $j < count($items); $j++) {
+    /*for each item, find its parent node and
+    1)assign it to the parent attribute,
+    and
+    2) push self to its parent's children attrribute.
+
+    Special: the root node UNAZ should have no parent.
+    */
+    if ($items[$j]->attributes['description'] == 'UNAZ') {
+      $root = &$items[$j];
+    }
+    for($i=0; $i < count($items); $i++) {
+    //if ( dataset[i].id == dataset[j].parentId ) {
+    //if ( $items[$j]->description == 'UNAZ' ) {
+
+    //else {
+      //if ( $items[$i]->tid == $items[$j]->ptid ) {
+      if ($items[$i]->attributes['tid'] == $items[$j]->attributes['ptid']
+        && $i != $j) {
+        $items[$i]->children[] = &$items[$j];
+      }
+    //}
+    }
+    //foreach item, see if there are content nodes attached and if so,
+    //load them into the staff array.
+    //$result = db_query(
+    //  "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
+    //  array(':tid' => $items[$j]->tid));
+    $result = db_query(
+      "SELECT nid FROM {taxonomy_index} WHERE tid = :tid",
+      array(':tid' => $items[$j]->attributes['tid']));
+    if ($result) {
+      $map = array();
+      foreach(node_load_multiple($result->fetchCol()) as $node) {
+        $items[$j]->staff[] = directory_node_data($node, $map);
+      }
+    }
+  }
+  dsm($root);
+  return $root;
+
+}

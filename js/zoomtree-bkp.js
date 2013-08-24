@@ -9,25 +9,9 @@ var m = [20, 120, 20, 120],
     h = 800 - m[0] - m[2],
     i = 0,
     root;
-var link;
-	//link ='/survey-info/directory/json/ua-organizations/6419';
-	//link='/survey-info/directory/json/ua-locations';
-	link='/survey-info/directory/json/alphabet';
+
 var tree = d3.layout.tree()
-    .size([h, w])
-    /*.children(function (d) {
-      //console.log(d);
-      if(d.children && d.content) {
-        return d.children.concat(d.content);
-      }
-      //else if (d.children){
-       // return d.children;
-      //}
-      else if (d.content) {
-        return d.content;
-      }
-    }
-    )*/;
+    .size([h, w]);
 
 var diagonal = d3.svg.diagonal()
     .projection(function(d) { return [d.y, d.x]; });
@@ -38,7 +22,7 @@ var vis = d3.select("#zoomtree").append("svg:svg")
   .append("svg:g")
     .attr("transform", "translate(" + m[3] + "," + m[0] + ")");
 
-d3.json(link, function(json) {
+d3.json("/survey-info/directory/json/ua-organizations/6419", function(json) {
   root = json;
   root.x0 = h / 2;
   root.y0 = 0;
@@ -148,9 +132,7 @@ function update(source) {
 function toggle(d) {
   if(!d.loaded) {
     d3.json("/survey-info/directory/json/" + d.attributes['vid'] + '/' + d.attributes['tid'], function(addTheseJSON) {
-      var ch = addTheseJSON.children;
-      var co = addTheseJSON.content;
-      var newnodes = tree.nodes(ch.concat(co)).reverse();
+      var newnodes = tree.nodes(addTheseJSON.children).reverse();
       d.children = newnodes[0];
       update(d);
     });
